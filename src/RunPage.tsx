@@ -21,6 +21,7 @@ import {
   type ApiError,
   type RunSnapshot,
 } from './api.ts'
+import Ledger from './Ledger.tsx'
 import { navigate } from './router.ts'
 import { elapsed, reading, relativeTime, stepIndexOf, STEPS } from './runs.ts'
 
@@ -124,9 +125,16 @@ export default function RunPage({ runId }: { runId: string }) {
 
   const { label, tone } = reading(run.status)
   const at = stepIndexOf(run.next)
+  /**
+   * A run that is moving is a column — the clock and the checklist read badly
+   * stretched. A run with a ledger on it is three tables, and the measure the
+   * ledger was chosen at. So the page takes the width its body needs rather
+   * than one width for both.
+   */
+  const ledger = ['awaiting_review', 'awaiting_confirmation', 'done'].includes(run.status)
 
   return (
-    <div className="page narrow">
+    <div className={ledger ? 'page' : 'page narrow'}>
       <header className="top">
         <h1 className="mono">{run.runId.slice(0, 8)}</h1>
         <span className={`pill ${tone}`}>
@@ -156,7 +164,7 @@ export default function RunPage({ runId }: { runId: string }) {
         </div>
       )}
 
-      <Body run={run} at={at} now={now} busy={busy} onContinue={resume} />
+      <Body run={run} at={at} now={now} busy={busy} onContinue={resume} onSnapshot={setRun} />
     </div>
   )
 }
@@ -168,12 +176,16 @@ function Body({
   now,
   busy,
   onContinue,
+  onSnapshot,
 }: {
   run: RunSnapshot
   at: number
   now: number
   busy: boolean
   onContinue: () => Promise<void>
+  /** The ledger's own answers come back as a snapshot, so a refusal reaches
+   *  the reviewer in the response to their click rather than on a poll. */
+  onSnapshot: (snapshot: RunSnapshot) => void
 }) {
   if (run.status === 'running') {
     const current = STEPS[at]
@@ -237,7 +249,12 @@ function Body({
             </p>
           </div>
         </div>
-        <Stub>the files, the ledger and the confirmation land here — backend #10 owns them</Stub>
+        {/* The same ledger, read-only: it is the record of what was decided,
+            and replacing it with a summary of itself would put the reviewer's
+            own work out of reach at exactly the moment they are attesting to
+            it. The files and the confirmation are #61's. */}
+        <Ledger run={run} onSnapshot={onSnapshot} readOnly />
+        <Stub>the files and the confirmation land here — backend #61 owns them</Stub>
       </>
     )
   }
@@ -246,7 +263,7 @@ function Body({
     return (
       <>
         <Checklist at={at} />
-        <Stub>the candidate ledger lands here — backend #10 owns it</Stub>
+        <Ledger run={run} onSnapshot={onSnapshot} />
       </>
     )
   }
@@ -261,7 +278,7 @@ function Body({
     )
   }
 
-  return <Stub>the ledger, read-only, lands here — backend #10 owns it</Stub>
+  return <Ledger run={run} onSnapshot={onSnapshot} readOnly />
 }
 
 /**
