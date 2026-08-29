@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "check": "node src/runs.check.ts",
+    "check": "node src/runs.check.ts && node src/ledger.check.ts",
     "preview": "vite preview",
     "prototype:review": "open prototypes/review-screen.prototype.html",
     "prototype:prerun": "open prototypes/pre-run-screen.prototype.html"
