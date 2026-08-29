@@ -127,10 +127,18 @@ export const continueRun = (runId: string) =>
   request<{ runId: string }>(`/api/runs/${runId}/continue`, { method: 'POST' })
 
 /**
- * The full snapshot. Only its head is rendered here; the ledger, the files and
- * `blocked` are transcribed by the tickets that render them.
+ * The snapshot, which is the index row plus everything only one run's own page
+ * needs. `next` is the checkpoint's pending node, passed through from
+ * LangGraph's `snap.next` — it is the whole of the progress model, derived on
+ * every read and persisted nowhere.
+ *
+ * The ledger, the files, `writeBack` and `blocked` are transcribed by the
+ * tickets that render them; hand-writing a field before something reads it
+ * would be a type claiming a surface exists.
  */
-export const getRun = (runId: string) => request<Run>(`/api/runs/${runId}`)
+export type RunSnapshot = Run & { next: string[] }
+
+export const getRun = (runId: string) => request<RunSnapshot>(`/api/runs/${runId}`)
 
 /** A browser navigation, not a fetch — it ends in a redirect back to `/runs`. */
 export const connectUrl = '/auth/notion/start'

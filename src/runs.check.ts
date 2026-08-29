@@ -8,7 +8,7 @@
  */
 
 import type { Run, RunStatus } from './api.ts'
-import { reading, sortRuns } from './runs.ts'
+import { elapsed, reading, sortRuns, stepIndexOf, STEPS } from './runs.ts'
 
 let failures = 0
 function ok(claim: string, passed: boolean) {
@@ -58,6 +58,30 @@ ok(
     reading('stalled').action === reading('failed').action,
 )
 ok('sorting does not mutate its input', runs[0].status === 'done')
+
+// ── The run's own page: progress is read, never stored ────────────────────
+
+ok(
+  'the pending node names the step, in the order the run moves through them',
+  STEPS.map((step) => stepIndexOf([step.node])).join() === '0,1,2,3',
+)
+ok(
+  'the screening step is shown with its explanation',
+  /nothing to report/.test(STEPS[2].detail) && STEPS.every((step) => step.detail !== ''),
+)
+ok(
+  'a run past the steps reads as complete, whether it is paused or over',
+  // `review` is a node but not a step; an empty `next` is a graph that ended.
+  stepIndexOf(['review']) === STEPS.length && stepIndexOf([]) === STEPS.length,
+)
+
+const clock = (seconds: number) =>
+  elapsed(new Date(0).toISOString(), seconds * 1000)
+
+ok('the elapsed clock counts from the run, in m:ss', clock(0) === '0:00' && clock(29) === '0:29')
+ok('and does not lose a minute to rounding', clock(59) === '0:59' && clock(60) === '1:00')
+ok('an hour is an hour, not sixty minutes', clock(3661) === '1:01:01')
+ok('a clock never runs backwards', elapsed(new Date(Date.now() + 5000).toISOString()) === '0:00')
 
 if (failures) throw new Error(`${failures} failed`)
 console.log('\nall ok')
