@@ -175,8 +175,6 @@ button { cursor: pointer }
 }
 .centred { text-align: center }
 
-/* A surface another ticket owns, said plainly rather than mocked up. */
-
 /* ── The candidate ledger ──────────────────────────────────────────────────
    Carried over from `prototypes/review-screen.prototype.html`, Variant B —
    the variant backend #10 chose. Trimmed to what is on screen. */

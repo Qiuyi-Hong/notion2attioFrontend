@@ -361,10 +361,16 @@ export const confirmRun = (
     body: JSON.stringify(attestation),
   })
 
-/** The opposite assertion — *these files never reached Attio*. It deletes the
- *  run and releases the batch, so the next run creates each deal once. */
+/**
+ * The opposite assertion — *these files never reached Attio*. It deletes the
+ * run and releases the batch, so the next run creates each deal once.
+ *
+ * The answer is `unknown` because the contract specifies no body here, unlike
+ * `DELETE /api/connection`. Naming a field nothing reads would be a type
+ * claiming a surface exists; what matters is that the request succeeded.
+ */
 export const cancelRun = (runId: string) =>
-  request<{ cancelled: true }>(`/api/runs/${runId}`, { method: 'DELETE' })
+  request<unknown>(`/api/runs/${runId}`, { method: 'DELETE' })
 
 /**
  * A file's own address. A repeatable `GET`, answering `Content-Disposition:

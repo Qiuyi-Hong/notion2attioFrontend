@@ -99,6 +99,21 @@ export default function Confirm({
 
   const release = () => act(() => cancelRun(run.runId), () => navigate('/runs'))
 
+  /**
+   * Below the message and never instead of it. On the blocked path it follows
+   * the banner directly, because a filled control between the refusal and its
+   * one admission makes the admission the quietest thing on a screen that is
+   * about nothing else.
+   */
+  const abandon = abandonable && (
+    <div className="abandon">
+      <button className="btn" disabled={busy} onClick={() => void attest({ abandoned: true })}>
+        {ABANDON.label}
+      </button>
+      <p className="foot">{ABANDON.detail}</p>
+    </div>
+  )
+
   return (
     <section className="confirm">
       <div className="lede">
@@ -189,6 +204,7 @@ export default function Confirm({
           </a>
         </div>
       )}
+      {run.blocked && abandon}
 
       {retry && run.writeBack && (
         <div className="writeback">
@@ -213,7 +229,7 @@ export default function Confirm({
         {gate.reason && (
           <p className="foot gate">
             {gate.reason}
-            {gate.reconnect && !run.blocked && (
+            {gate.reconnect && (
               <>
                 {' '}
                 <a href={connectUrl}>Connect Notion</a>
@@ -234,44 +250,32 @@ export default function Confirm({
             <p className="foot">{retry ? RETRY.detail : CONFIRM.detail}</p>
           </div>
 
-          {/* Cancelling is hidden once a write-back has been attempted: the
-              reviewer has already stated that the files reached Attio, and
-              *these files never reached Attio* would contradict it. The exit
-              from a failed write is abandoning, below. */}
-          {!retry && (
-            <div className="choice">
-              {cancelling ? (
-                <>
-                  <div className="arm">
-                    <button className="btn danger" disabled={busy} onClick={() => void release()}>
-                      Yes — delete this run and release the batch
-                    </button>
-                    <button className="btn ghost" disabled={busy} onClick={() => setCancelling(false)}>
-                      Go back
-                    </button>
-                  </div>
-                  <p className="foot">{CANCEL.detail}</p>
-                </>
-              ) : (
-                <>
-                  <button className="btn danger" disabled={busy} onClick={() => setCancelling(true)}>
-                    {CANCEL.label}
-                  </button>
-                  <p className="foot">{CANCEL.detail}</p>
-                </>
-              )}
-            </div>
-          )}
+          {/* Offered on the retry panel too. The reviewer has already said the
+              files reached Attio, so saying the opposite here contradicts
+              them — but a misclicked Confirm is exactly the case where the
+              contradiction is the truth, and the route keeps this exit open
+              for the whole of the pause. Withholding it would leave a
+              mis-attestation with no way out that is not also a lie. */}
+          <div className="choice">
+            {cancelling ? (
+              <div className="arm">
+                <button className="btn danger" disabled={busy} onClick={() => void release()}>
+                  Yes — delete this run and release the batch
+                </button>
+                <button className="btn ghost" disabled={busy} onClick={() => setCancelling(false)}>
+                  Go back
+                </button>
+              </div>
+            ) : (
+              <button className="btn danger" disabled={busy} onClick={() => setCancelling(true)}>
+                {CANCEL.label}
+              </button>
+            )}
+            <p className="foot">{CANCEL.detail}</p>
+          </div>
         </div>
 
-        {abandonable && (
-          <div className="abandon">
-            <button className="btn" disabled={busy} onClick={() => void attest({ abandoned: true })}>
-              {ABANDON.label}
-            </button>
-            <p className="foot">{ABANDON.detail}</p>
-          </div>
-        )}
+        {!run.blocked && abandon}
       </div>
     </section>
   )

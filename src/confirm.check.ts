@@ -27,6 +27,7 @@ import {
   RETRY,
   retrying,
   size,
+  unwrittenRows,
 } from './confirm.ts'
 
 let failures = 0
@@ -122,6 +123,10 @@ ok(
   blockedReading(blocked).short !== blockedReading(blocked).head &&
     blockedReading(blocked).short.includes('Demo Space'),
 )
+ok(
+  'and it does not offer a second Connect link — the block carries its own repair',
+  !confirmGate(blocked, connected).reconnect,
+)
 
 // ── A partial write-back is a Retry panel, derived from the failure list ────
 
@@ -158,6 +163,17 @@ ok(
 ok(
   'a batch-wide cause is one sentence over every remaining row, not seven identical ones',
   byCause(wholesale).length === 1 && byCause(wholesale)[0].rows.length === 3,
+)
+ok(
+  'the rows still reading Ready for CRM are named in order, whatever their cause',
+  unwrittenRows(partial).join() === 'row-3,row-4,row-5',
+)
+ok(
+  // The ADR-0008 dead end: abandoned from a wrong-workspace block, where no
+  // write-back ever ran. A surface pointing at "the rows below" here points at
+  // nothing, in exactly the case the exit exists for.
+  'and a write-back that never ran names none rather than an empty list of them',
+  unwrittenRows(null).length === 0 && unwrittenRows(finished).length === 0,
 )
 ok(
   'every cause the wire can carry has a sentence, and each says what to do',

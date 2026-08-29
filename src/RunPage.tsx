@@ -23,7 +23,7 @@ import {
   type RunSnapshot,
 } from './api.ts'
 import Confirm from './Confirm.tsx'
-import { failuresIn } from './confirm.ts'
+import { unwrittenRows } from './confirm.ts'
 import Ledger from './Ledger.tsx'
 import { navigate } from './router.ts'
 import { elapsed, reading, relativeTime, stepIndexOf, STEPS } from './runs.ts'
@@ -279,11 +279,15 @@ function Body({
    * it handed off; this one handed the same deals to Attio and could not mark
    * Notion, so its batch stays reserved — releasing it would let the next run
    * emit those deals a second time. Reading this as a finished run is the one
-   * misreading that costs something, which is why it says what is unfinished
-   * and names the rows.
+   * misreading that costs something, which is why it says what is unfinished.
+   *
+   * There are two ways in and they leave different evidence: a write-back that
+   * half-finished names the rows it missed, and one that could never begin —
+   * ADR-0008's dead end, abandoned from a wrong-workspace block — has no
+   * failure list at all. The sentence points at rows only when there are rows.
    */
   if (run.status === 'abandoned') {
-    const unwritten = failuresIn(run.writeBack)
+    const unwritten = unwrittenRows(run.writeBack)
     return (
       <>
         <div className="banner neutral">
@@ -291,15 +295,21 @@ function Body({
             <h2>The write-back was abandoned</h2>
             <p>
               This run is over, but it is not done. Its bundle is in Attio; Notion was never
-              marked. The batch stays reserved so nobody hands these deals off a second time — a
-              person sets the rows below to <code>Imported</code> in Notion by hand, and then
-              deletes this run to release it.
+              marked. The batch stays reserved so nobody hands these deals off a second time —{' '}
+              {unwritten.length > 0 ? (
+                <>
+                  a person sets the rows below to <code>Imported</code> in Notion by hand
+                </>
+              ) : (
+                <>
+                  the write-back never ran, so every source row behind the ledger below still
+                  reads <code>Ready for CRM</code> and a person sets them to <code>Imported</code>{' '}
+                  in Notion by hand
+                </>
+              )}
+              , and then deletes this run to release it.
             </p>
-            {unwritten.length > 0 && (
-              <p className="mono rows">
-                {unwritten.map((failure) => failure.sourceId).sort().join(' · ')}
-              </p>
-            )}
+            {unwritten.length > 0 && <p className="mono rows">{unwritten.join(' · ')}</p>}
           </div>
         </div>
         {/* The ledger stays: it is the record of what went to Attio, and it is

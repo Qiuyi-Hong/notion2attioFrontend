@@ -76,8 +76,9 @@ export const confirmGate = (blocked: Blocked | null, connection: Connection | nu
   // The per-run block outranks the per-screen one: a live Connection naming
   // another workspace is not a missing Connection, and saying *connect Notion*
   // to someone who is connected would send them round a loop that changes
-  // nothing.
-  if (blocked) return { can: false, reason: blockedReading(blocked).short, reconnect: true }
+  // nothing. `reconnect` is false because the block carries its own repair, in
+  // its own banner — a second link here would be the same click twice.
+  if (blocked) return { can: false, reason: blockedReading(blocked).short, reconnect: false }
   if (!connection) return { can: false, reason: 'Checking the Notion connection…', reconnect: false }
   if (!connection.connected) {
     return {
@@ -129,6 +130,17 @@ export const failuresIn = (writeBack: WriteBack | null) => writeBack?.failed ?? 
  */
 export const retrying = (writeBack: WriteBack | null): boolean =>
   failuresIn(writeBack).length > 0
+
+/**
+ * The rows a write-back did not reach, in order — the ones still reading
+ * `Ready for CRM`, which is what a person marking Notion by hand is holding.
+ * The retry panel names them under their cause; an abandoned run names them
+ * as the whole of what is unfinished.
+ */
+export const unwrittenRows = (writeBack: WriteBack | null): string[] =>
+  failuresIn(writeBack)
+    .map((failure) => failure.sourceId)
+    .sort()
 
 /**
  * The failures grouped by cause, rows in order.
