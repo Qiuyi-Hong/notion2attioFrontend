@@ -20,6 +20,8 @@ type Reading = {
   label: string
   tone: Tone
   action: Action
+  /** What the row's one control is called. */
+  control: string
 }
 
 /**
@@ -35,22 +37,20 @@ type Reading = {
  * and `abandoned` are last because both are over.
  */
 const READINGS: Record<RunStatus, Reading> = {
-  awaiting_confirmation: { rank: 0, label: 'Waiting on you', tone: 'warn', action: 'confirm' },
-  running: { rank: 1, label: 'Running', tone: 'live', action: 'open' },
-  awaiting_review: { rank: 1, label: 'Ready for review', tone: 'live', action: 'review' },
-  stalled: { rank: 2, label: 'Stopped', tone: 'stop', action: 'continue' },
-  failed: { rank: 2, label: 'Stopped', tone: 'stop', action: 'continue' },
-  done: { rank: 3, label: 'Done', tone: 'ok', action: 'open' },
-  abandoned: { rank: 3, label: 'Abandoned', tone: 'neutral', action: 'open' },
+  awaiting_confirmation: {
+    rank: 0, label: 'Waiting on you', tone: 'warn', action: 'confirm', control: 'Confirm import',
+  },
+  running: { rank: 1, label: 'Running', tone: 'live', action: 'open', control: 'Open' },
+  awaiting_review: {
+    rank: 1, label: 'Ready for review', tone: 'live', action: 'review', control: 'Review',
+  },
+  stalled: { rank: 2, label: 'Stopped', tone: 'stop', action: 'continue', control: 'Continue' },
+  failed: { rank: 2, label: 'Stopped', tone: 'stop', action: 'continue', control: 'Continue' },
+  done: { rank: 3, label: 'Done', tone: 'ok', action: 'open', control: 'Open' },
+  abandoned: { rank: 3, label: 'Abandoned', tone: 'neutral', action: 'open', control: 'Open' },
 }
 
 export const reading = (status: RunStatus): Reading => READINGS[status]
-
-/**
- * The sentence that is the point of a pinned row. "Waiting on you" says a
- * person is needed; this says what happens if they are not.
- */
-export const CONSEQUENCE = 'files are made · Notion still says '
 
 /** What needs a human first, newest first within each group. */
 export const sortRuns = (runs: Run[]): Run[] =>

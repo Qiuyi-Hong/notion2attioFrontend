@@ -73,6 +73,13 @@ export class ApiError extends Error {
   }
 }
 
+/** Anything that leaves a request has to be one of these, or every caller
+ *  needs a second failure path. */
+export const asApiError = (thrown: unknown): ApiError =>
+  thrown instanceof ApiError
+    ? thrown
+    : new ApiError('internal_error', 'The server could not be reached.')
+
 type ErrorBody = {
   error?: { code?: ErrorCode; message?: string; details?: Record<string, unknown> }
 }
@@ -119,11 +126,11 @@ export const startRun = (batch: string) =>
 export const continueRun = (runId: string) =>
   request<{ runId: string }>(`/api/runs/${runId}/continue`, { method: 'POST' })
 
-/** The full snapshot; this ticket renders only its head. */
-export const getRun = (runId: string) =>
-  request<Run & { blocked: { readWorkspace: string; liveWorkspace: string } | null }>(
-    `/api/runs/${runId}`,
-  )
+/**
+ * The full snapshot. Only its head is rendered here; the ledger, the files and
+ * `blocked` are transcribed by the tickets that render them.
+ */
+export const getRun = (runId: string) => request<Run>(`/api/runs/${runId}`)
 
 /** A browser navigation, not a fetch — it ends in a redirect back to `/runs`. */
 export const connectUrl = '/auth/notion/start'

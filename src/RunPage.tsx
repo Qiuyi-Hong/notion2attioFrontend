@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { ApiError, getRun, type Run } from './api.ts'
+import { asApiError, getRun, type ApiError, type Run } from './api.ts'
 import { navigate } from './router.ts'
 import { reading, relativeTime } from './runs.ts'
 
@@ -22,9 +22,7 @@ export default function RunPage({ runId }: { runId: string }) {
   useEffect(() => {
     getRun(runId)
       .then(setRun)
-      .catch((thrown: unknown) =>
-        setError(thrown instanceof ApiError ? thrown : new ApiError('internal_error', 'Failed.')),
-      )
+      .catch((thrown: unknown) => setError(asApiError(thrown)))
   }, [runId])
 
   const back = (

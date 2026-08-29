@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import {
-  ApiError,
+  asApiError,
   connectUrl,
   continueRun as postContinue,
   disconnect,
@@ -17,16 +17,14 @@ import {
   getConnection,
   getRuns,
   startRun as postRun,
+  type ApiError,
   type Batch,
   type Connection,
   type Run,
 } from './api.ts'
 import { bannerFor, outcomeIn } from './connection.ts'
 import { navigate } from './router.ts'
-import { CONSEQUENCE, awaitingConfirmation, reading, relativeTime, sortRuns } from './runs.ts'
-
-const asApiError = (thrown: unknown) =>
-  thrown instanceof ApiError ? thrown : new ApiError('internal_error', String(thrown))
+import { awaitingConfirmation, reading, relativeTime, sortRuns } from './runs.ts'
 
 export default function RunsIndex() {
   const [connection, setConnection] = useState<Connection | null>(null)
@@ -37,6 +35,8 @@ export default function RunsIndex() {
   const [busy, setBusy] = useState(false)
   const [refusal, setRefusal] = useState<{ batch: string; runId?: string } | null>(null)
   const [stranded, setStranded] = useState<Run[] | null>(null)
+  /** A refused Start, Continue or Disconnect. The server named it; say so. */
+  const [problem, setProblem] = useState<ApiError | null>(null)
 
   // Read once: the consent round trip's answer is a fact about a moment, not
   // about now. It is taken off the address bar so a reload cannot replay it.
@@ -93,13 +93,25 @@ export default function RunsIndex() {
 
   const banner = bannerFor(connection, batchesError, outcome)
   const ready = batches !== null && batches.length > 0
+
+  /**
+   * Confirming a run writes `CRM status` back to Notion, so it needs a grant
+   * that answers. A `401` arrives without warning — a run can reach
+   * `awaiting_confirmation` and then lose the connection under it — and the
+   * batch read is where that shows. A `notion_failed` is not counted: that is
+   * Notion being unwell, not the grant being gone.
+   */
+  const connectionLive =
+    connection?.connected === true && batchesError?.code !== 'not_connected'
   const batch = chosen ?? batches?.[0]?.batch ?? ''
 
   const ordered = sortRuns(runs ?? [])
   /**
    * At most one primary button is on screen at a time, and the sort has
-   * already decided which row deserves it: the first one that needs a human.
-   * A refusal takes it instead — it is answering the click just made.
+   * already decided which one: the first row that needs a human. A refusal
+   * takes it instead — it is answering the click just made — and **Start run**
+   * gets it only when nothing else does, which is this surface's whole
+   * argument rendered in a button: what needs you outranks what you came for.
    */
   const primary = refusal
     ? null
@@ -112,23 +124,32 @@ export default function RunsIndex() {
   async function start() {
     setBusy(true)
     setRefusal(null)
+    setProblem(null)
     try {
       await postRun(batch)
       await loadRuns()
     } catch (thrown) {
       const error = asApiError(thrown)
       if (error.code === 'batch_in_progress') setRefusal({ batch, runId: error.runId })
-      else setBatchesError(error)
+      else setProblem(error)
     } finally {
       setBusy(false)
     }
   }
 
+  /**
+   * A `409 wrong_stage` here means someone else already continued this run.
+   * Swallowing it would re-enable the button and say nothing, so the server's
+   * own account of the refusal goes on screen.
+   */
   async function resume(runId: string) {
     setBusy(true)
+    setProblem(null)
     try {
       await postContinue(runId)
       await loadRuns()
+    } catch (thrown) {
+      setProblem(asApiError(thrown))
     } finally {
       setBusy(false)
     }
@@ -148,9 +169,12 @@ export default function RunsIndex() {
   async function reallyDisconnect() {
     setStranded(null)
     setBusy(true)
+    setProblem(null)
     try {
       await disconnect()
       await loadConnection()
+    } catch (thrown) {
+      setProblem(asApiError(thrown))
     } finally {
       setBusy(false)
     }
@@ -201,7 +225,11 @@ export default function RunsIndex() {
               <option value="">{batches === null ? 'Loading batches…' : 'No batches ready'}</option>
             )}
           </select>
-          <button className="btn primary" onClick={() => void start()} disabled={!ready || busy}>
+          <button
+            className={primary ? 'btn' : 'btn primary'}
+            onClick={() => void start()}
+            disabled={!ready || busy}
+          >
             Start run
           </button>
         </div>
@@ -259,6 +287,18 @@ export default function RunsIndex() {
         </div>
       )}
 
+      {problem && (
+        <div className="banner stop">
+          <div className="grow">
+            <h2>That did not go through</h2>
+            <p>{problem.message}</p>
+          </div>
+          <button className="btn" onClick={() => setProblem(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {refusal && (
         <div className="banner warn">
           <div className="grow">
@@ -311,6 +351,7 @@ export default function RunsIndex() {
               onContinue={resume}
               busy={busy}
               primary={run.runId === primary}
+              connected={connectionLive}
             />
           ))}
         </tbody>
@@ -329,15 +370,17 @@ function Row({
   onContinue,
   busy,
   primary,
+  connected,
 }: {
   run: Run
   onContinue: (runId: string) => Promise<void>
   busy: boolean
   primary: boolean
+  connected: boolean
 }) {
-  const { label, tone, action } = reading(run.status)
+  const { label, tone, action, control } = reading(run.status)
   const open = () => navigate(`/runs/${run.runId}`)
-  const emphasis = primary ? 'btn primary' : 'btn'
+  const cannotConfirm = action === 'confirm' && !connected
 
   return (
     <tr className={action === 'confirm' ? 'needy' : run.status === 'running' ? 'live' : undefined}>
@@ -349,25 +392,31 @@ function Row({
           {run.status === 'running' && <span className="dot pulse" />}
           {label}
         </span>
+        {/* The sentence that is the point of a pinned row: "Waiting on you"
+            says a person is needed, this says what happens if they are not. */}
         {action === 'confirm' && (
           <div className="consequence">
-            {CONSEQUENCE}
-            <code>Ready for CRM</code>
+            files are made · Notion still says <code>Ready for CRM</code>
+          </div>
+        )}
+        {cannotConfirm && (
+          <div className="consequence">
+            confirming writes back to Notion · connect that workspace again first
           </div>
         )}
       </td>
       <td className="act">
-        {action === 'continue' ? (
-          <button className={emphasis} onClick={() => void onContinue(run.runId)} disabled={busy}>
-            Continue
-          </button>
-        ) : action === 'open' ? (
+        {action === 'open' ? (
           <button className="btn ghost" onClick={open}>
-            Open
+            {control}
           </button>
         ) : (
-          <button className={emphasis} onClick={open}>
-            {action === 'confirm' ? 'Confirm import' : 'Review'}
+          <button
+            className={primary ? 'btn primary' : 'btn'}
+            onClick={action === 'continue' ? () => void onContinue(run.runId) : open}
+            disabled={cannotConfirm || (busy && action === 'continue')}
+          >
+            {control}
           </button>
         )}
       </td>

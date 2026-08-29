@@ -24,12 +24,18 @@ function subscribe(notify: () => void) {
 }
 
 const currentPath = () => window.location.pathname
+const here = () => window.location.pathname + window.location.search
 
-/** The path the browser is on, re-read on every navigation. */
+/**
+ * The path the browser is on, re-read on every navigation. The query string is
+ * deliberately not part of it: routes match on the path alone, and the one
+ * query this app reads — the consent round trip's outcome — is taken once at
+ * mount and then stripped, so nothing re-renders on it.
+ */
 export const usePath = () => useSyncExternalStore(subscribe, currentPath)
 
 export function navigate(path: string, { replace = false } = {}) {
-  if (path === currentPath() + window.location.search) return
+  if (path === here()) return
   if (replace) window.history.replaceState(null, '', path)
   else window.history.pushState(null, '', path)
   announce()
