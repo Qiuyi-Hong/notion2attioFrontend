@@ -28,7 +28,7 @@
  *   back from the server rather than being guessed at here.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   asApiError,
   postReview,
@@ -57,6 +57,17 @@ import {
   stateOf,
   unansweredWarns,
 } from './ledger.ts'
+
+/**
+ * Every hold the reviewer means to keep. A decision document's `held` is not
+ * sparse and replaces what came before, so each one has to name all of them —
+ * and they are read off the snapshot rather than a local set, so a reload
+ * leaves the ledger where the reviewer left it.
+ */
+const holdsIn = (candidates: Candidates) =>
+  allOf(candidates)
+    .filter((candidate) => candidate.heldByReviewer)
+    .map((candidate) => candidate.id)
 
 /**
  * `awaiting_review` is the only status that can be worked. The same ledger is
@@ -97,20 +108,48 @@ export default function Ledger({
    * snapshot rather than out of a local set, so a reload leaves the ledger
    * where the reviewer left it.
    */
-  const holds = allOf(candidates)
-    .filter((candidate) => candidate.heldByReviewer)
-    .map((candidate) => candidate.id)
+  const holds = holdsIn(candidates)
+  /**
+   * The snapshot a queued decision will be sent against. A chained request is
+   * made after the one before it has already replaced the ledger, so closing
+   * over this render's `holds` would name the holds as they were before that
+   * answer landed — and un-name whatever it changed.
+   */
+  const runRef = useRef(run)
+  useEffect(() => {
+    runRef.current = run
+  }, [run])
 
-  async function send(decision: Decision) {
+  /**
+   * Decisions go out **one at a time**. Each one names every hold the reviewer
+   * means to keep, read off the snapshot, so two overlapping requests would
+   * each compute that list from a snapshot the other was about to replace —
+   * and the later answer would take the earlier hold away. Chaining is what
+   * lets the controls stay live while one is in flight, which they must: a
+   * blur that disabled the checkbox the reviewer was already clicking would
+   * swallow the click and the hold with it.
+   */
+  const queue = useRef<Promise<unknown>>(Promise.resolve())
+
+  function send(decision: Decision): Promise<boolean> {
     setBusy(true)
     setProblem(null)
-    try {
-      onSnapshot(await postReview(run.runId, { held: holds, ...decision }))
-    } catch (thrown) {
-      setProblem(asApiError(thrown))
-    } finally {
-      setBusy(false)
-    }
+    const done = queue.current
+      .catch(() => {})
+      .then(async () => {
+        try {
+          const held = holdsIn(runRef.current.candidates)
+          onSnapshot(await postReview(run.runId, { held, ...decision }))
+          return true
+        } catch (thrown) {
+          setProblem(asApiError(thrown))
+          return false
+        } finally {
+          setBusy(false)
+        }
+      })
+    queue.current = done
+    return done
   }
 
   const toggleHold = (candidate: Candidate) =>
@@ -120,18 +159,30 @@ export default function Ledger({
         : [...holds, candidate.id],
     })
 
-  /** An edit is taken exactly as typed and pins; re-typing what was proposed
-   *  changes nothing, which is what the server's sparse `edits` makes knowable. */
-  function commit(candidate: Candidate, field: string, value: string) {
+  const dropDraft = (candidateId: string, field: string) =>
     setDrafts((was) => {
-      const next = { ...was, [candidate.id]: { ...was[candidate.id] } }
-      delete next[candidate.id][field]
-      if (!Object.keys(next[candidate.id]).length) delete next[candidate.id]
+      const next = { ...was, [candidateId]: { ...was[candidateId] } }
+      delete next[candidateId][field]
+      if (!Object.keys(next[candidateId]).length) delete next[candidateId]
       return next
     })
-    if (value !== (candidate as unknown as Record<string, string>)[field]) {
-      void send({ edits: { [candidate.id]: { [field]: value } } })
+
+  /**
+   * An edit is taken exactly as typed and pins; re-typing what was proposed
+   * changes nothing, which is what the server's sparse `edits` makes knowable.
+   *
+   * The draft is dropped only once the edit has **landed**. Dropping it on
+   * blur would show the old value back for the length of the round trip, and
+   * would throw the reviewer's typing away outright if the request were
+   * refused — leaving a banner and nothing to retry from.
+   */
+  function commit(candidate: Candidate, field: string, value: string) {
+    if (value === (candidate as unknown as Record<string, string>)[field]) {
+      return dropDraft(candidate.id, field)
     }
+    void send({ edits: { [candidate.id]: { [field]: value } } }).then(
+      (landed) => landed && dropDraft(candidate.id, field),
+    )
   }
 
   /** A Stop's answer goes out now: it cannot clear a Warn, so it cannot
@@ -142,6 +193,8 @@ export default function Ledger({
   const answerWarn = (flagId: string, answer: Answer) =>
     setPending((given) => ({ ...given, [flagId]: answer }))
 
+  /** Answers given here and not yet sent. The header count, the flag panel and
+   *  the row's pill all read this, so no two of them disagree about one act. */
   const answered = new Set(Object.keys(pending))
   const open = unansweredWarns(candidates, batchFlags, answered)
   const going = sendable(candidates)
@@ -150,7 +203,18 @@ export default function Ledger({
    *  server's; this button is the reviewer's reading of the same rule. */
   const exportBundle = () => send({ answers: pending })
 
-  const shared = { candidates, repairs, drafts, setDrafts, commit, toggleHold, busy, readOnly, allNotes }
+  const shared = {
+    candidates,
+    repairs,
+    drafts,
+    setDrafts,
+    commit,
+    toggleHold,
+    busy,
+    readOnly,
+    allNotes,
+    answered,
+  }
   const flagProps = { pending, answerStop, answerWarn, candidates, readOnly, busy }
 
   return (
@@ -196,11 +260,16 @@ export default function Ledger({
         candidates={candidates}
         pending={pending}
         answerWarn={answerWarn}
+        /**
+         * Every Deal, not only the sendable ones. The answer covers the batch
+         * rather than the candidates that happened to be sendable when it was
+         * given, so a Deal released afterwards would otherwise export under
+         * the owner nobody confirmed — and re-open the flag as `new_owner` to
+         * say so, which is a refusal the reviewer never needed to see.
+         */
         onOwner={(owner) =>
           send({
-            edits: Object.fromEntries(
-              candidates.deals.filter((deal) => !deal.held).map((deal) => [deal.id, { owner }]),
-            ),
+            edits: Object.fromEntries(candidates.deals.map((deal) => [deal.id, { owner }])),
           })
         }
         readOnly={readOnly}
@@ -255,7 +324,9 @@ export default function Ledger({
               <span>
                 {candidates.companies.find((one) => one.id === person.companyId)?.name ?? '—'}
               </span>,
-              <span className="mono from">{person.sourceId}</span>,
+              <span className="mono from">
+                {rowsBehind(person, candidates, repairs).join(' · ')}
+              </span>,
             ]}
           />
         ))}
@@ -368,9 +439,9 @@ function Row({
   candidates,
   repairs,
   toggleHold,
-  busy,
   readOnly,
   allNotes,
+  answered,
   flagProps,
 }: {
   candidate: Candidate
@@ -380,16 +451,23 @@ function Row({
   candidates: Candidates
   repairs: Repair[]
   toggleHold: (candidate: Candidate) => void
-  busy: boolean
   readOnly: boolean
   allNotes: boolean
+  answered: ReadonlySet<string>
   flagProps: FlagProps
 } & Record<string, unknown>) {
   const flags = candidate.flags
-  const worst = flags.find((flag) => !flag.cleared)
+  const outstanding = flags.filter((flag) => !flag.cleared && !answered.has(flag.id))
+  /**
+   * The tint is the worst thing on the row, not the first. Server order is not
+   * severity order, and a candidate carrying a Warn ahead of a Stop is exactly
+   * the row that will be dropped from the bundle — it cannot read as the
+   * milder of the two.
+   */
+  const worst = outstanding.find((flag) => flag.level === 'stop') ?? outstanding[0]
   // A row the reviewer opened or closed by hand outranks both defaults.
   const isOpen = opened[candidate.id] ?? (allNotes || Boolean(worst))
-  const state = stateOf(candidate)
+  const state = stateOf(candidate, answered)
   const span = cells.length + 2
 
   return (
@@ -414,10 +492,13 @@ function Row({
           </button>
           {!readOnly && (
             <label className="holdlbl">
+              {/* Never disabled while a decision is in flight. Committing an
+                  edit sets `busy` on blur — which is the very act of clicking
+                  this — so disabling here would swallow the click and lose the
+                  hold silently. Sends are serialised instead. */}
               <input
                 type="checkbox"
                 checked={candidate.heldByReviewer}
-                disabled={busy}
                 onChange={() => toggleHold(candidate)}
               />
               hold
@@ -625,7 +706,6 @@ function Edit({
   setDrafts,
   commit,
   repairs,
-  busy,
   readOnly,
 }: {
   candidate: Candidate
@@ -634,21 +714,23 @@ function Edit({
   setDrafts: React.Dispatch<React.SetStateAction<Record<string, Record<string, string>>>>
   commit: (candidate: Candidate, field: string, value: string) => void
   repairs: Repair[]
-  busy: boolean
   readOnly: boolean
 } & Record<string, unknown>) {
   const stored = (candidate as unknown as Record<string, string>)[field] ?? ''
   const value = drafts[candidate.id]?.[field] ?? stored
   const pinned = candidate.overrides.includes(field)
 
-  if (readOnly) return <Marked candidate={candidate} field={field} value={stored} repairs={repairs} />
+  if (readOnly) {
+    return <Marked candidate={candidate} field={field} value={stored} repairs={repairs} readonly />
+  }
 
   return (
     <span className={`celledit ${pinned ? 'pinned' : ''}`}>
+      {/* Likewise live: disabling the next cell mid-Tab drops focus to the
+          body and stops the reviewer typing through a row. */}
       <input
         className="cellinp"
         value={value}
-        disabled={busy}
         title={
           repairsOn(repairs, candidate.id, field)
             .map((repair) => `was ${repair.from}`)
@@ -758,14 +840,24 @@ function BatchPanel({
                       <input
                         className="inp"
                         value={owner ?? (single ? tally[0].owner : readTally(tally))}
-                        disabled={busy || !single}
-                        title={single ? undefined : 'This batch names more than one owner — edit them on their own Deal rows.'}
+                        disabled={!single}
+                        title={
+                          single
+                            ? undefined
+                            : tally.length === 0
+                              ? 'Every Deal in this batch is Held, so there is no owner to confirm.'
+                              : 'This batch names more than one owner — edit them on their own Deal rows.'
+                        }
                         onChange={(event) => setOwner(event.target.value)}
                         onBlur={(event) => {
-                          if (single && event.target.value !== tally[0].owner) {
-                            onOwner(event.target.value)
-                            setOwner(null)
-                          }
+                          const typed = event.target.value.trim()
+                          // An empty owner is not an answer. Attio needs one on
+                          // every deal, and writing none is the thing this flag
+                          // exists to stop — so a cleared field reverts rather
+                          // than emptying the batch.
+                          if (!typed || !single) return setOwner(null)
+                          if (typed !== tally[0].owner) onOwner(typed)
+                          setOwner(null)
                         }}
                       />
                     </label>
@@ -774,16 +866,26 @@ function BatchPanel({
                       <input
                         className="inp"
                         value={stage}
-                        disabled={busy}
-                        onChange={(event) => setStage(event.target.value)}
+                        onChange={(event) => {
+                          setStage(event.target.value)
+                          // An answer already given follows the field it was
+                          // given from. Otherwise the line above would read one
+                          // stage and the export would carry another.
+                          if (pending[flag.id] !== undefined) {
+                            answerWarn(flag.id, { stage: event.target.value })
+                          }
+                        }}
                       />
                     </label>
+                    {/* Never disabled by `cleared`: a decision the reviewer can
+                        see they have made is one they must be able to revise
+                        before it is sent. */}
                     <button
                       className="btn"
-                      disabled={busy || cleared || !stage}
+                      disabled={busy || !stage.trim()}
                       onClick={() => answerWarn(flag.id, { stage })}
                     >
-                      Confirm both
+                      {cleared ? 'Confirmed' : 'Confirm both'}
                     </button>
                   </div>
                 )}

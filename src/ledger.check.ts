@@ -158,6 +158,15 @@ ok(
   'a candidate nothing was repaired on is marked nowhere',
   repairsOn(repairs, 'company:tern', 'domain').length === 0,
 )
+ok(
+  "a Company's account reaches its People's repairs, not only its own",
+  // A row seen *only* through a repair on a Person still collapsed onto this
+  // account, so the count that says so has to include it.
+  rowsBehind(byId('company:heliograph'), candidates, [
+    ...repairs,
+    { sourceId: 'AC-9', candidateId: 'person:heliograph', field: 'linkedIn', from: ' x ', to: 'x' },
+  ]).join() === 'AC-4,AC-9',
+)
 
 // ── The export gate ────────────────────────────────────────────────────────
 
@@ -199,6 +208,18 @@ ok(
 ok(
   'a batch naming one owner reads as that one name',
   readTally(ownerTally([deal({ id: 'a', companyId: 'x' }), deal({ id: 'b', companyId: 'y' })])) === 'Maya',
+)
+
+// ── One screen says one thing about one act ───────────────────────────────
+
+ok(
+  'a Warn answered on screen reads as answered on its row too, not only in the count',
+  stateOf(byId('deal:brightyard')).label === 'Needs decision' &&
+    stateOf(byId('deal:brightyard'), new Set([w1.id])).label === 'Clear',
+)
+ok(
+  'but an answer cannot un-Hold a candidate — a hold is the server\'s to lift',
+  stateOf(byId('person:tern'), new Set([b1.id])).label === 'Held',
 )
 
 // ── No prose travels; every word about a flag is written here ──────────────

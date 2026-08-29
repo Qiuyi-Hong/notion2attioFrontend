@@ -108,11 +108,22 @@ export type State = { label: 'Clear' | 'Needs decision' | 'Held'; tone: 'ok' | '
  * Read off the candidate, never worked out here. `held` already carries the
  * Stops, the reviewer's holds and the Company cascade, decided server-side;
  * all that is left is which of the three words to say.
+ *
+ * `answered` is what the reviewer has answered on screen but not yet sent —
+ * the same reading the export gate takes, for the same reason. Without it the
+ * row would still read *Needs decision* while the flag's own panel read
+ * *Answered* and the header count had already moved: three places on one
+ * screen disagreeing about one act the reviewer just performed.
+ *
+ * It cannot make a candidate un-Held. A hold is the server's to lift.
  */
-export const stateOf = (candidate: Candidate): State =>
+export const stateOf = (
+  candidate: Candidate,
+  answered: ReadonlySet<string> = new Set(),
+): State =>
   candidate.held
     ? { label: 'Held', tone: 'stop' }
-    : candidate.flags.some((flag) => !flag.cleared)
+    : candidate.flags.some((flag) => !flag.cleared && !answered.has(flag.id))
       ? { label: 'Needs decision', tone: 'warn' }
       : { label: 'Clear', tone: 'ok' }
 
@@ -174,14 +185,23 @@ export const rowsBehind = (
     person.notes.forEach((note) => rows.add(note.sourceId))
   }
 
+  /** The repairs that landed on one candidate, whoever it is. */
+  const fromRepairs = (candidateId: string) =>
+    repairs
+      .filter((repair) => repair.candidateId === candidateId)
+      .forEach((repair) => rows.add(repair.sourceId))
+
   if ('email' in candidate) fromPerson(candidate)
   else {
     const companyId = 'domain' in candidate ? candidate.id : candidate.companyId
-    accountOf(companyId, candidates)?.people.forEach(fromPerson)
+    // The account's People, and their repairs: a row that collapsed onto a
+    // Person and was only ever seen through a repair belongs in the count too.
+    accountOf(companyId, candidates)?.people.forEach((person) => {
+      fromPerson(person)
+      fromRepairs(person.id)
+    })
   }
-  repairs
-    .filter((repair) => repair.candidateId === candidate.id)
-    .forEach((repair) => rows.add(repair.sourceId))
+  fromRepairs(candidate.id)
 
   return [...rows].sort()
 }
