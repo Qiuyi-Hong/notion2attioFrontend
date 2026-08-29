@@ -1,111 +1,133 @@
+/* The tokens and the handful of components the runs index needs, carried over
+   from `prototypes/pre-run-screen.prototype.html` — the reference this surface
+   was chosen from. Trimmed to what is on screen. */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
-
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+  --bg: #f4f6f8; --surface: #ffffff; --surface-2: #eef1f5;
+  --ink: #15181e; --ink-2: #3d444f; --muted: #69717f; --faint: #98a0ad;
+  --line: #dfe4ea; --line-strong: #c6cdd7;
+  --accent: #2f57c4; --accent-soft: #e6ecfb; --accent-ink: #22409a;
+  --stop: #ad2338; --stop-soft: #fbe8ea; --stop-ink: #8d1c2e;
+  --warn: #96590c; --warn-soft: #fbf0dd; --warn-ink: #7a4808;
+  --clear: #15705a; --clear-soft: #e2f1ec;
+  --radius: 7px;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+    --bg: #12141a; --surface: #1a1d25; --surface-2: #22262f;
+    --ink: #eef1f6; --ink-2: #c3cad5; --muted: #8c95a3; --faint: #6b7482;
+    --line: #2b3039; --line-strong: #3a414d;
+    --accent: #7d9cf5; --accent-soft: #1e2740; --accent-ink: #a8bdfa;
+    --stop: #f08a9a; --stop-soft: #33191f; --stop-ink: #f4a3b0;
+    --warn: #e0ab5f; --warn-soft: #2e2416; --warn-ink: #eabf80;
+    --clear: #5cbfa0; --clear-soft: #132a24;
+    color-scheme: dark;
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
+* { box-sizing: border-box }
 
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+h1 { font-size: 19px; margin: 0; font-weight: 600; letter-spacing: -.012em }
+h2 { font-size: 13.5px; margin: 0 0 3px; font-weight: 600 }
+p { margin: 0 }
+a { color: var(--accent); text-underline-offset: 2px }
+button, select { font: inherit }
+button { cursor: pointer }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px }
+
+.mono, code {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .86em;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
+.page { max-width: 1040px; margin: 0 auto; padding: 26px 22px 40px }
+.grow { flex: 1 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+.top {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding-bottom: 16px; border-bottom: 1px solid var(--line);
 }
+.start { display: flex; align-items: center; gap: 8px }
+.start select {
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  border-radius: 6px; padding: 6px 10px; font-size: 13px;
+}
+.start select:disabled { opacity: .5 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.btn {
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  border-radius: 6px; padding: 7px 14px; font-weight: 500; font-size: 13px;
+  text-decoration: none; display: inline-block; white-space: nowrap;
 }
+.btn:hover { background: var(--surface-2) }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff }
+.btn.primary:hover { filter: brightness(1.08) }
+.btn.danger { background: var(--stop); border-color: var(--stop); color: #fff }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--accent); padding: 6px 8px }
+.btn.ghost:hover { background: var(--accent-soft) }
+.btn:disabled { opacity: .45; cursor: not-allowed; filter: none }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; border-radius: 999px;
+  padding: 2px 9px; font-size: 11.5px; font-weight: 500; white-space: nowrap;
+}
+.pill.ok { background: var(--clear-soft); color: var(--clear) }
+.pill.warn { background: var(--warn-soft); color: var(--warn-ink) }
+.pill.stop { background: var(--stop-soft); color: var(--stop-ink) }
+.pill.live { background: var(--accent-soft); color: var(--accent-ink) }
+.pill.neutral { background: var(--surface-2); color: var(--muted) }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none }
+.dot.pulse { animation: pulse 1.4s ease-in-out infinite }
+@keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important } }
+
+.banner {
+  border-radius: var(--radius); padding: 13px 15px; margin-top: 16px;
+  display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap;
+}
+.banner.stop { background: var(--stop-soft); border: 1px solid rgba(173, 35, 56, .28) }
+.banner.warn { background: var(--warn-soft); border: 1px solid rgba(150, 89, 12, .28) }
+.banner p { font-size: 12.5px; color: var(--ink-2) }
+.banner .ids { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2) }
+
+.runs { width: 100%; border-collapse: collapse; margin-top: 2px }
+.runs th {
+  text-align: left; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--muted); font-weight: 500; padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.runs th:first-child, .runs th:nth-child(2) { width: 130px }
+.runs th:nth-child(3) { width: 130px }
+.runs th:last-child { width: 190px }
+.runs td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: middle; font-size: 13px }
+.runs td.act { text-align: right; white-space: nowrap }
+.runs td.empty { color: var(--muted); padding: 22px 12px; text-align: center }
+.runs .when { color: var(--muted); font-size: 12.5px; white-space: nowrap }
+
+/* A row that needs a human is pinned by the sort; these make it look pinned. */
+.runs tr.needy td { background: var(--warn-soft) }
+.runs tr.needy td:first-child { box-shadow: inset 3px 0 0 var(--warn) }
+.runs tr.live td { background: var(--accent-soft) }
+.runs tr.live td:first-child { box-shadow: inset 3px 0 0 var(--accent) }
+.consequence { font-size: 12.5px; color: var(--warn-ink); margin-top: 3px }
+/* A tinted row and its pill share a colour, so the pill needs its own ground
+   to stay a pill. */
+.runs tr.needy .pill, .runs tr.live .pill { background: var(--surface) }
+
+.head { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 18px 0 }
+.head dt { color: var(--muted); font-size: 12.5px }
+.head dd { margin: 0 }
+
+.foot { color: var(--muted); font-size: 12px; margin-top: 16px }
