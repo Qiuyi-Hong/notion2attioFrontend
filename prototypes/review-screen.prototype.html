@@ -1,0 +1,894 @@
+<meta charset="utf-8">
+<title>Flagged Candidate Review</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* ─── PROTOTYPE — throwaway. Answers issue #10: what does a reviewer see
+   when a candidate is flagged? Three structurally opposed variants over the
+   real 2026-W34 batch, switchable with ?variant=A|B|C. Not production code. ── */
+
+:root{
+  --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eef1f5; --sunken:#e8ecf1;
+  --ink:#15181e; --ink-2:#3d444f; --muted:#69717f; --faint:#98a0ad;
+  --line:#dfe4ea; --line-strong:#c6cdd7;
+  --accent:#2f57c4; --accent-soft:#e6ecfb; --accent-ink:#22409a;
+  --stop:#ad2338; --stop-soft:#fbe8ea; --stop-ink:#8d1c2e;
+  --warn:#96590c; --warn-soft:#fbf0dd; --warn-ink:#7a4808;
+  --clear:#15705a; --clear-soft:#e2f1ec;
+  --repair:#5b5680; --repair-soft:#edecf4;
+  --shadow:0 1px 2px rgba(21,24,30,.06), 0 6px 20px -8px rgba(21,24,30,.16);
+  --radius:7px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12141a; --surface:#1a1d25; --surface-2:#22262f; --sunken:#0e1015;
+    --ink:#eef1f6; --ink-2:#c3cad5; --muted:#8c95a3; --faint:#6b7482;
+    --line:#2b3039; --line-strong:#3a414d;
+    --accent:#7d9cf5; --accent-soft:#1e2740; --accent-ink:#a8bdfa;
+    --stop:#f08a9a; --stop-soft:#33191f; --stop-ink:#f4a3b0;
+    --warn:#e0ab5f; --warn-soft:#2e2416; --warn-ink:#eabf80;
+    --clear:#5cbfa0; --clear-soft:#132a24;
+    --repair:#a9a3cf; --repair-soft:#232235;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12141a; --surface:#1a1d25; --surface-2:#22262f; --sunken:#0e1015;
+  --ink:#eef1f6; --ink-2:#c3cad5; --muted:#8c95a3; --faint:#6b7482;
+  --line:#2b3039; --line-strong:#3a414d;
+  --accent:#7d9cf5; --accent-soft:#1e2740; --accent-ink:#a8bdfa;
+  --stop:#f08a9a; --stop-soft:#33191f; --stop-ink:#f4a3b0;
+  --warn:#e0ab5f; --warn-soft:#2e2416; --warn-ink:#eabf80;
+  --clear:#5cbfa0; --clear-soft:#132a24;
+  --repair:#a9a3cf; --repair-soft:#232235;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  padding-bottom:104px;
+}
+h1,h2,h3,h4{margin:0; text-wrap:balance; font-weight:600; letter-spacing:-.012em}
+p{margin:0}
+button{font:inherit; cursor:pointer}
+input{font:inherit}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important} }
+
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em}
+.tnum{font-variant-numeric:tabular-nums}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:10.5px;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:500;
+}
+
+/* ── prototype chrome ───────────────────────────────────────────── */
+.protobar{
+  position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:80;
+  display:flex; align-items:stretch; gap:0; background:var(--ink); color:var(--bg);
+  border-radius:999px; box-shadow:0 8px 30px -6px rgba(0,0,0,.45); overflow:hidden;
+  max-width:calc(100vw - 24px);
+}
+.protobar button{
+  background:transparent; border:0; color:inherit; padding:0 14px; font-size:15px;
+  display:flex; align-items:center; opacity:.75;
+}
+.protobar button:hover{opacity:1; background:rgba(255,255,255,.1)}
+.protobar .pb-label{
+  padding:9px 12px; display:flex; flex-direction:column; justify-content:center;
+  min-width:0; border-left:1px solid rgba(255,255,255,.15); border-right:1px solid rgba(255,255,255,.15);
+}
+.protobar .pb-key{font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.08em; opacity:.6}
+.protobar .pb-name{font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.protobar .pb-state{padding:0 14px; border:0; background:transparent; color:inherit; opacity:.75; font-size:11px;
+  font-family:"IBM Plex Mono",monospace; letter-spacing:.06em}
+.statepanel{
+  position:fixed; left:50%; bottom:72px; transform:translateX(-50%); z-index:79;
+  background:var(--ink); color:var(--bg); border-radius:8px; padding:12px 14px; margin:0;
+  font-family:"IBM Plex Mono",monospace; font-size:11.5px; line-height:1.65; white-space:pre;
+  max-width:min(620px,calc(100vw - 24px)); overflow:auto; max-height:44vh;
+  box-shadow:0 8px 30px -6px rgba(0,0,0,.45);
+}
+.protonote{
+  max-width:1180px; margin:0 auto; padding:14px 24px 0;
+  color:var(--muted); font-size:12.5px;
+}
+.protonote strong{color:var(--ink-2); font-weight:600}
+
+/* ── shared page frame ──────────────────────────────────────────── */
+.wrap{max-width:1180px; margin:0 auto; padding:20px 24px 40px}
+.wrap-narrow{max-width:780px; margin:0 auto; padding:20px 24px 40px}
+
+.masthead{display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap;
+  padding-bottom:14px; border-bottom:1px solid var(--line); margin-bottom:22px}
+.masthead h1{font-size:20px}
+.masthead .sub{color:var(--muted); font-size:13px; margin-top:3px}
+.tally{display:flex; gap:18px; align-items:flex-end}
+.tally div{text-align:right}
+.tally .n{font-size:19px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.1}
+.tally .k{font-size:11px; color:var(--muted)}
+
+/* chips */
+.chip{display:inline-flex; align-items:center; gap:5px; border-radius:999px; padding:2px 9px;
+  font-size:11px; font-weight:500; letter-spacing:.02em; white-space:nowrap; border:1px solid transparent}
+.chip-stop{background:var(--stop-soft); color:var(--stop-ink); border-color:color-mix(in srgb,var(--stop) 30%,transparent)}
+.chip-decision{background:var(--warn-soft); color:var(--warn-ink); border-color:color-mix(in srgb,var(--warn) 32%,transparent)}
+.chip-notice{background:transparent; color:var(--warn-ink); border-color:color-mix(in srgb,var(--warn) 45%,transparent); border-style:dashed}
+.chip-clear{background:var(--clear-soft); color:var(--clear)}
+.chip-held{background:var(--stop-soft); color:var(--stop-ink)}
+.chip-batch{background:var(--accent-soft); color:var(--accent-ink)}
+.chip-done{background:var(--clear-soft); color:var(--clear)}
+.dot{width:6px; height:6px; border-radius:50%; display:inline-block; flex:none}
+.dot-clear{background:var(--clear)} .dot-warn{background:var(--warn)} .dot-stop{background:var(--stop)}
+
+/* controls */
+.btn{border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
+  border-radius:6px; padding:7px 13px; font-size:13px; font-weight:500}
+.btn:hover{border-color:var(--muted)}
+.btn-primary{background:var(--accent); border-color:var(--accent); color:#fff}
+:root[data-theme="dark"] .btn-primary{color:#0f1219}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn-primary{color:#0f1219}}
+.btn-primary:hover{filter:brightness(1.06); border-color:var(--accent)}
+.btn-primary:disabled{opacity:.4; cursor:not-allowed; filter:none}
+.btn-quiet{background:transparent; border-color:var(--line)}
+.btn-sel{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-ink)}
+.btn-sm{padding:4px 9px; font-size:12px}
+.inp{border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
+  border-radius:6px; padding:7px 10px; font-size:13px; min-width:0}
+.inp::placeholder{color:var(--faint)}
+
+/* value provenance */
+.was{color:var(--repair); text-decoration:underline; text-decoration-style:dotted;
+  text-underline-offset:3px; text-decoration-color:color-mix(in srgb,var(--repair) 55%,transparent)}
+.arrow{color:var(--faint); padding:0 5px}
+.strike{color:var(--muted); text-decoration:line-through; text-decoration-color:var(--faint)}
+
+.quote{border-left:2px solid var(--line-strong); padding:2px 0 2px 12px; color:var(--ink-2);
+  font-style:italic; font-size:13px}
+.consequence{font-size:12.5px; color:var(--ink-2); background:var(--sunken);
+  border-radius:6px; padding:9px 11px}
+
+/* ══ VARIANT A — triage queue ══════════════════════════════════════ */
+.a-progress{height:3px; background:var(--sunken); border-radius:2px; overflow:hidden; margin-bottom:26px}
+.a-progress i{display:block; height:100%; background:var(--accent); transition:width .25s ease}
+.a-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow); margin-bottom:14px; overflow:hidden; display:flex}
+.a-stripe{width:4px; flex:none; background:var(--line-strong)}
+.a-card[data-lvl="stop"] .a-stripe{background:var(--stop)}
+.a-card[data-lvl="decision"] .a-stripe{background:var(--warn)}
+.a-card[data-lvl="notice"] .a-stripe{background:repeating-linear-gradient(180deg,var(--warn) 0 5px,transparent 5px 10px)}
+.a-card[data-lvl="batch"] .a-stripe{background:var(--accent)}
+.a-card[data-done="1"] .a-stripe{background:var(--clear)}
+.a-body{padding:16px 18px; flex:1; min-width:0; display:flex; flex-direction:column; gap:11px}
+.a-top{display:flex; align-items:center; gap:9px; flex-wrap:wrap}
+.a-q{font-size:16px; font-weight:600; letter-spacing:-.015em}
+.a-who{color:var(--muted); font-size:12.5px}
+.a-actions{display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding-top:2px}
+.a-rest{background:var(--surface-2); border:1px dashed var(--line-strong); border-radius:var(--radius);
+  padding:14px 16px; color:var(--muted); font-size:13px; margin-top:20px}
+.a-drawer{margin-top:12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface)}
+.a-drawer summary{padding:12px 16px; cursor:pointer; font-size:13px; color:var(--ink-2); list-style:none;
+  display:flex; justify-content:space-between; align-items:center; gap:12px}
+.a-drawer summary::-webkit-details-marker{display:none}
+.a-drawer[open] summary{border-bottom:1px solid var(--line)}
+.a-pair{display:grid; grid-template-columns:auto 1fr; gap:4px 14px; padding:14px 16px}
+
+/* ══ VARIANT B — ledger ════════════════════════════════════════════ */
+.b-batchbar{display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; background:var(--accent-soft);
+  border:1px solid color-mix(in srgb,var(--accent) 25%,transparent); border-radius:var(--radius);
+  padding:12px 15px; margin-bottom:20px}
+.b-field{display:flex; flex-direction:column; gap:4px}
+.b-field label{font-size:11.5px; color:var(--accent-ink); font-weight:500}
+.b-sec{margin-bottom:26px}
+.b-sechead{display:flex; align-items:baseline; gap:10px; margin-bottom:8px; flex-wrap:wrap}
+.b-sechead h2{font-size:14px}
+.b-sechead span{color:var(--muted); font-size:12px}
+.b-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface)}
+table.b-tbl{border-collapse:collapse; width:100%; min-width:760px; font-size:13px}
+.b-tbl th{text-align:left; font-weight:500; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--muted); padding:9px 12px; border-bottom:1px solid var(--line); background:var(--surface-2);
+  white-space:nowrap; font-family:"IBM Plex Mono",monospace}
+.b-tbl td{padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+.b-tbl tr:last-child td{border-bottom:0}
+.b-tbl tr[data-flagged="1"]{background:color-mix(in srgb,var(--warn-soft) 55%,transparent)}
+.b-tbl tr[data-lvl="stop"]{background:color-mix(in srgb,var(--stop-soft) 55%,transparent)}
+.b-tbl tr[data-held="1"] td{opacity:.45}
+.b-expand{padding:0 !important}
+.b-expand-in{padding:13px 14px 15px; background:var(--sunken); display:flex; flex-direction:column; gap:10px;
+  border-top:1px dashed var(--line-strong)}
+.b-cell-edit{border:1px solid transparent; background:transparent; color:inherit; border-radius:4px;
+  padding:2px 5px; margin:-2px -5px; width:100%; min-width:120px}
+.b-cell-edit:hover{border-color:var(--line-strong); background:var(--surface)}
+.b-toggle{display:flex; gap:14px; align-items:center; flex-wrap:wrap; margin-bottom:16px; font-size:12.5px; color:var(--muted)}
+.b-holdlbl{display:inline-flex; gap:5px; align-items:center; font-size:11.5px; color:var(--muted); cursor:pointer}
+
+/* ══ VARIANT C — account dossiers ══════════════════════════════════ */
+.c-grid{display:flex; flex-direction:column; gap:16px}
+.c-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow); overflow:hidden}
+.c-card[data-state="held"]{border-color:color-mix(in srgb,var(--stop) 40%,transparent)}
+.c-card[data-state="warn"]{border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.c-card[data-holdback="1"]{opacity:.5}
+.c-head{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;
+  padding:14px 18px; border-bottom:1px solid var(--line)}
+.c-head h2{font-size:16px}
+.c-meta{color:var(--muted); font-size:12px; margin-top:3px; display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+.c-cols{display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:0}
+@media (max-width:820px){ .c-cols{grid-template-columns:1fr} }
+.c-left{padding:15px 18px; display:flex; flex-direction:column; gap:12px; min-width:0}
+.c-right{padding:15px 18px; border-left:1px solid var(--line); background:var(--surface-2); min-width:0;
+  display:flex; flex-direction:column; gap:12px}
+@media (max-width:820px){ .c-right{border-left:0; border-top:1px solid var(--line)} }
+.c-obj{display:flex; gap:9px; align-items:flex-start; padding:8px 0; border-bottom:1px dashed var(--line)}
+.c-obj:last-of-type{border-bottom:0}
+.c-obj-k{width:64px; flex:none; color:var(--muted); font-size:11px; padding-top:2px;
+  font-family:"IBM Plex Mono",monospace; letter-spacing:.06em; text-transform:uppercase}
+.c-obj-v{min-width:0; flex:1; display:flex; flex-direction:column; gap:7px}
+.c-flag{border-radius:6px; padding:10px 12px; display:flex; flex-direction:column; gap:9px; font-size:13px}
+.c-flag[data-lvl="stop"]{background:var(--stop-soft)}
+.c-flag[data-lvl="decision"]{background:var(--warn-soft)}
+.c-flag[data-lvl="notice"]{background:transparent; border:1px dashed color-mix(in srgb,var(--warn) 40%,transparent)}
+.c-foot{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;
+  padding:10px 18px; border-top:1px solid var(--line); background:var(--sunken); font-size:12px; color:var(--muted)}
+.c-foot details summary{cursor:pointer; list-style:none}
+.c-foot details summary::-webkit-details-marker{display:none}
+.c-clearlist{background:var(--surface); border:1px dashed var(--line-strong); border-radius:var(--radius);
+  padding:14px 18px}
+.c-clearlist h3{font-size:13px; margin-bottom:8px}
+.c-clearrow{display:flex; align-items:center; gap:12px; padding:6px 0; font-size:13px;
+  border-bottom:1px solid var(--line); flex-wrap:wrap}
+.c-clearrow:last-child{border-bottom:0}
+
+/* ── export + confirm ───────────────────────────────────────────── */
+.exportbar{position:sticky; bottom:0; background:var(--surface); border:1px solid var(--line);
+  border-radius:var(--radius); box-shadow:var(--shadow); padding:13px 16px; margin-top:24px;
+  display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap}
+.exportbar .gate{font-size:12.5px; color:var(--muted)}
+.exportbar .gate b{color:var(--ink-2); font-weight:600}
+.files{display:flex; gap:8px; flex-wrap:wrap; margin-top:6px}
+.file{display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:5px;
+  padding:3px 8px; font-size:11.5px; color:var(--ink-2); background:var(--surface-2)}
+
+.confirm{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow); padding:20px 22px; display:flex; flex-direction:column; gap:14px}
+.confirm h2{font-size:17px}
+.flip{display:grid; grid-template-columns:1fr auto 1fr; gap:8px 14px; align-items:baseline; font-size:13px;
+  border:1px solid var(--line); border-radius:6px; padding:12px 14px; background:var(--surface-2)}
+.flip .h{font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted);
+  font-family:"IBM Plex Mono",monospace}
+.done-banner{background:var(--clear-soft); border:1px solid color-mix(in srgb,var(--clear) 32%,transparent);
+  border-radius:var(--radius); padding:16px 18px; display:flex; flex-direction:column; gap:8px}
+</style>
+
+<div id="app"></div>
+
+<div class="protobar" role="group" aria-label="Prototype variant switcher">
+  <button id="pb-prev" title="Previous variant (left arrow)" aria-label="Previous variant">&lsaquo;</button>
+  <div class="pb-label">
+    <span class="pb-key" id="pb-key">VARIANT A</span>
+    <span class="pb-name" id="pb-name">Triage queue</span>
+  </div>
+  <button id="pb-next" title="Next variant (right arrow)" aria-label="Next variant">&rsaquo;</button>
+  <button class="pb-state" id="pb-state" title="Show prototype state">STATE</button>
+  <button class="pb-state" id="pb-reset" title="Reset prototype state">RESET</button>
+</div>
+<pre class="statepanel" id="statepanel" hidden></pre>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────
+   PROTOTYPE — issue #10. Throwaway. No persistence, no tests.
+   Data is the real 2026-W34 batch; flags are the rule set fixed in #6.
+   ───────────────────────────────────────────────────────────────── */
+
+const BATCH = "2026-W34";
+
+/* Source rows, verbatim from data/notion-qualified-accounts-w34.csv */
+const ROWS = {
+  r1:{id:"QL-260818-001",contact:"Priya Nair",notes:"Priya is replacing a spreadsheet-based forecast. Asked whether implementation can start before the October planning cycle."},
+  r2:{id:"QL-260818-002",contact:"Helena Costa",notes:"Referred by Vale Partners. UK team owns the evaluation, but procurement is based in Dublin. Wants a discovery call next week."},
+  r3:{id:"QL-260819-003",contact:"Amina Yusuf",notes:"Met at Mobility Summit. Amina asked for the fleet partnerships deck. No work email was captured; LinkedIn is verified."},
+  r4:{id:"QL-260819-004",contact:"Lewis Grant",notes:"Lewis owns CRM hygiene and reporting. Their current process combines Pipedrive exports with a weekly agency spreadsheet."},
+  r5:{id:"QL-260819-005",contact:"Marta Silva",notes:"Marta controls budget and joined the same evaluation as Lewis. Treat this as a second contact at the existing account, not a second opportunity."},
+  r6:{id:"QL-260820-006",contact:"Emily Stone",notes:"Emily attended the RevOps teardown webinar and requested the migration checklist. She previously spoke to the team under another email address."},
+  r7:{id:"QL-260820-007",contact:"Soren Dahl",notes:"Warm referral from Dani at North & Coast. Interested in replacing manual lead routing before hiring two additional SDRs."},
+  r8:{id:"QL-260820-008",contact:"Noor Hassan",notes:"Noor replied from a newer email alias. Their LinkedIn profile and role match a person already researched in the spring campaign."}
+};
+
+/* Candidates, derived. Brightyard's two rows collapse into one Company. */
+const ACCOUNTS = [
+  {key:"tern", name:"Tern Mobility", domain:"tern.example.com", emp:"51-200", hq:"Leeds",
+   rows:["r3"], people:[{row:"r3", name:"Amina Yusuf", email:"", job:"VP Partnerships"}]},
+  {key:"brightyard", name:"Brightyard", domain:"brightyard.example.com", emp:"11-50", hq:"Bristol",
+   rows:["r4","r5"], people:[{row:"r4", name:"Lewis Grant", email:"lewis.grant@brightyard.example.com", job:"Sales Operations Lead"},
+                             {row:"r5", name:"Marta Silva", email:"marta.silva@brightyard.example.com", job:"Head of Demand Generation"}]},
+  {key:"heliograph", name:"Heliograph Systems", domain:"heliograph.example.com", emp:"51-200", hq:"Edinburgh",
+   rows:["r6"], people:[{row:"r6", name:"Emily Stone", email:"emily@heliograph.example.com", job:"Revenue Systems Manager"}]},
+  {key:"lattice", name:"Lattice Forge", domain:"lattice.example.com", emp:"51-200", hq:"Cambridge",
+   rows:["r8"], people:[{row:"r8", name:"Noor Hassan", email:"noor@lattice.example.com", job:"Revenue Operations Manager"}]},
+  {key:"northbeam", name:"Northbeam Analytics", domain:"northbeam.example.com", emp:"51-200", hq:"London",
+   rows:["r1"], people:[{row:"r1", name:"Priya Nair", email:"priya.nair@northbeam.example.com", job:"VP Revenue Operations"}]},
+  {key:"oriel", name:"Oriel Foods", domain:"oriel.example.com", emp:"201-500", hq:"Manchester",
+   rows:["r2"], people:[{row:"r2", name:"Helena Costa", email:"helena.costa@oriel.example.com", job:"Commercial Director"}]},
+  {key:"alder", name:"Alder & Finch", domain:"alderfinch.example.com", emp:"11-50", hq:"London",
+   rows:["r7"], people:[{row:"r7", name:"Soren Dahl", email:"soren@alderfinch.example.com", job:"Founder"}]}
+];
+const ACC = Object.fromEntries(ACCOUNTS.map(a=>[a.key,a]));
+
+/* Silent repairs, one per (source row, field) actually changed.
+   NB: 9 here, not the 11 quoted in #6 section 8 — see the ticket resolution. */
+const REPAIRS = [
+  {row:"r1", acc:"northbeam", field:"Domain",    from:"https://www.northbeam.example.com/", to:"northbeam.example.com", rule:"S1"},
+  {row:"r1", acc:"northbeam", field:"Employees", from:"51–200", to:"51-200", rule:"S2"},
+  {row:"r2", acc:"oriel",     field:"Domain",    from:"https://oriel.example.com/uk", to:"oriel.example.com", rule:"S1"},
+  {row:"r3", acc:"tern",      field:"Domain",    from:"https://tern.example.com", to:"tern.example.com", rule:"S1"},
+  {row:"r4", acc:"brightyard",field:"Domain",    from:"https://brightyard.example.com", to:"brightyard.example.com", rule:"S1"},
+  {row:"r4", acc:"brightyard",field:"Employees", from:"11–50", to:"11-50", rule:"S2"},
+  {row:"r5", acc:"brightyard",field:"Domain",    from:"https://www.brightyard.example.com/", to:"brightyard.example.com", rule:"S1"},
+  {row:"r7", acc:"alder",     field:"Domain",    from:"www.alderfinch.example.com", to:"alderfinch.example.com", rule:"S1"},
+  {row:"r8", acc:"lattice",   field:"Domain",    from:"https://lattice.example.com/", to:"lattice.example.com", rule:"S1"}
+];
+
+/* ── state ──────────────────────────────────────────────────────── */
+const FRESH = () => ({
+  stage:"review",                // review | confirm | done
+  owner:"", dealStage:"",
+  ternEmail:"", ternMode:null,   // null | "supplied" | "anyway"
+  brightyard:null,               // null | "one" | "two"
+  ack:{N1:false, N2:false, N3:false},
+  holdback:{}                    // account key -> true  (B and C only)
+});
+let S = FRESH();
+let showRepairs = false;
+let variant = (new URLSearchParams(location.search).get("variant") || "A").toUpperCase();
+if(!["A","B","C"].includes(variant)) variant = "A";
+const VARIANT_NAMES = {A:"Triage queue", B:"Candidate ledger", C:"Account dossiers"};
+const PREV = {A:"C", B:"A", C:"B"}, NEXT = {A:"B", B:"C", C:"A"};
+
+const n3Active = () => S.ternMode === "anyway";
+const ternState = () => S.ternMode === null ? "held" : S.ternMode === "supplied" ? "clear" : "warn";
+const openWarns = () => {
+  let n = 0;
+  if(!S.brightyard) n++;
+  if(!S.ack.N1) n++;
+  if(!S.ack.N2) n++;
+  if(n3Active() && !S.ack.N3) n++;
+  return n;
+};
+const openBatch = () => (S.owner.trim()?0:1) + (S.dealStage.trim()?0:1);
+const canExport = () => openWarns() === 0 && openBatch() === 0;
+const shipped = () => ACCOUNTS.filter(a => !S.holdback[a.key]);
+const heldCount = () => (ternState()==="held"?1:0) + Object.keys(S.holdback).filter(k=>S.holdback[k]).length;
+const dealCount = () => shipped().length + (S.brightyard === "two" && !S.holdback.brightyard ? 1 : 0);
+const personCount = () => shipped().reduce((n,a)=>
+  n + a.people.filter(() => !(a.key==="tern" && ternState()==="held")).length, 0);
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const repairsFor = key => REPAIRS.filter(r => r.acc === key);
+
+/* ══════════════════════════════════════════════════════════════════
+   VARIANT A — Triage queue
+   Bet: the reviewer's job is answering questions, not inspecting data.
+   The unit on screen is the FLAG. Unflagged candidates are never shown.
+   ══════════════════════════════════════════════════════════════════ */
+function renderA(){
+  const q = [];
+
+  q.push({lvl:"batch", done:!!S.owner.trim(),
+    chip:"Batch question", who:"Applies to all " + dealCount() + " deals",
+    title:"Who owns these deals in Attio?",
+    body:'<p>Notion records the owner as <span class="mono">Maya</span> — a name. Attio needs one of its own users’ email addresses, and this pipeline never reads Attio, so it cannot offer you a list.</p>',
+    actions:'<input class="inp" style="min-width:280px" id="a-owner" type="email" placeholder="maya@yourcompany.com" value="'+esc(S.owner)+'" data-bind="owner">'});
+
+  q.push({lvl:"batch", done:!!S.dealStage.trim(),
+    chip:"Batch question", who:"Applies to all " + dealCount() + " deals",
+    title:"What stage do these deals enter at?",
+    body:'<p>No Notion column holds a stage. Attio requires one.</p>'
+        +'<div class="consequence">A deal’s stage cannot be corrected by re-importing — deals are always created, never matched.</div>',
+    actions:'<input class="inp" style="min-width:280px" id="a-stage" placeholder="e.g. Lead" value="'+esc(S.dealStage)+'" data-bind="dealStage">'});
+
+  q.push({lvl:"stop", done:S.ternMode!==null,
+    chip:"Stop", who:"Person · Amina Yusuf · Tern Mobility",
+    title:"Amina Yusuf has no work email.",
+    body:'<div class="quote">“No work email was captured; LinkedIn is verified.”'
+        +'<div style="font-style:normal;color:var(--faint);font-size:11.5px;margin-top:4px" class="mono">'+ROWS.r3.id+'</div></div>'
+        +'<div class="consequence">Email is how Attio recognises a person. Without one it cannot match her, so every future import creates another copy of Amina.</div>',
+    actions:'<input class="inp" style="min-width:260px" id="a-tern" type="email" placeholder="amina.yusuf@tern.example.com" value="'+esc(S.ternEmail)+'" data-bind="ternEmail">'
+        +'<button class="btn '+(S.ternMode==="supplied"?"btn-sel":"")+'" data-act="tern-supplied">Use this email</button>'
+        +'<button class="btn '+(S.ternMode==="anyway"?"btn-sel":"")+'" data-act="tern-anyway">Send without an email</button>'
+        +(S.ternMode?'<button class="btn btn-quiet btn-sm" data-act="tern-reset">Undo</button>':''),
+    foot: S.ternMode===null
+      ? 'Leave this and Amina is <b>held back</b> — she returns next week. Tern Mobility’s company and its deal still go.'
+      : S.ternMode==="supplied"
+        ? 'Amina will be created with <span class="mono">'+esc(S.ternEmail||"—")+'</span>.'
+        : 'Amina will be created without an email. That raised a new notice below.'});
+
+  q.push({lvl:"decision", done:!!S.brightyard,
+    chip:"Decision", who:"Deal · Brightyard · from 2 source rows",
+    title:"Two contacts at Brightyard — one deal, or two?",
+    body:'<div style="display:grid;gap:6px;font-size:12.5px">'
+        +'<div style="display:flex;gap:10px;align-items:baseline"><span class="mono" style="color:var(--faint);flex:none">'+ROWS.r4.id+'</span><span>Lewis Grant · Sales Operations Lead</span></div>'
+        +'<div style="display:flex;gap:10px;align-items:baseline"><span class="mono" style="color:var(--faint);flex:none">'+ROWS.r5.id+'</span><span>Marta Silva · Head of Demand Generation</span></div></div>'
+        +'<div class="quote">“Marta controls budget and joined the same evaluation as Lewis. <b style="font-style:normal">Treat this as a second contact at the existing account, not a second opportunity.</b>”</div>'
+        +'<div class="consequence">The company already merges itself — both rows normalise to <span class="mono">brightyard.example.com</span>, and Attio joins on domain. Only the deal is your call, and it has no undo.</div>',
+    actions:'<button class="btn '+(S.brightyard==="one"?"btn-sel":"")+'" data-act="by-one">One deal</button>'
+        +'<button class="btn '+(S.brightyard==="two"?"btn-sel":"")+'" data-act="by-two">Two deals</button>'});
+
+  q.push({lvl:"notice", done:S.ack.N1,
+    chip:"Notice", who:"Person · Emily Stone · Heliograph Systems",
+    title:"Emily Stone may already be in Attio under another address.",
+    body:'<div class="quote">“She previously spoke to the team under another email address.”</div>'
+        +'<div class="consequence">Nothing to change here. This pipeline never reads Attio, so it can relay the note but cannot check it. If a duplicate appears, Attio’s own merge is the fix.</div>',
+    actions:'<button class="btn '+(S.ack.N1?"btn-sel":"")+'" data-act="ack-N1">'+(S.ack.N1?"Read":"I’ve read this")+'</button>'});
+
+  q.push({lvl:"notice", done:S.ack.N2,
+    chip:"Notice", who:"Person · Noor Hassan · Lattice Forge",
+    title:"Noor Hassan replied from a newer alias.",
+    body:'<div class="quote">“Their LinkedIn profile and role match a person already researched in the spring campaign.”</div>'
+        +'<div class="consequence">Nothing to change here. Same reason as above — the note is a suspicion about records we cannot see.</div>',
+    actions:'<button class="btn '+(S.ack.N2?"btn-sel":"")+'" data-act="ack-N2">'+(S.ack.N2?"Read":"I’ve read this")+'</button>'});
+
+  if(n3Active()) q.push({lvl:"notice", done:S.ack.N3,
+    chip:"Notice", who:"Person · Amina Yusuf · raised by your answer above",
+    title:"Amina will never match on a future import.",
+    body:'<div class="consequence">You chose to send her without an email. Attio matches people on email address, so next week’s run creates a second Amina rather than updating this one.</div>',
+    actions:'<button class="btn '+(S.ack.N3?"btn-sel":"")+'" data-act="ack-N3">'+(S.ack.N3?"Read":"I’ve read this")+'</button>'});
+
+  const total = q.length, done = q.filter(c=>c.done).length;
+
+  const cards = q.map(c =>
+    '<article class="a-card" data-lvl="'+c.lvl+'" data-done="'+(c.done?1:0)+'">'
+    +'<div class="a-stripe"></div><div class="a-body">'
+    +'<div class="a-top"><span class="chip chip-'+(c.lvl==="batch"?"batch":c.lvl)+'">'
+    +((c.done && c.lvl!=="batch") ? "✓ " : "")+c.chip+'</span>'
+    +'<span class="a-who">'+c.who+'</span></div>'
+    +'<h3 class="a-q">'+c.title+'</h3>'+c.body
+    +'<div class="a-actions">'+c.actions+'</div>'
+    +(c.foot ? '<p style="font-size:12.5px;color:var(--muted)">'+c.foot+'</p>' : '')
+    +'</div></article>').join("");
+
+  return '<div class="wrap-narrow">'
+    +'<div class="masthead"><div>'
+    +'<div class="eyebrow">Batch '+BATCH+' · 8 source rows</div>'
+    +'<h1>'+(done===total ? "Everything answered" : (total-done)+" question"+(total-done===1?"":"s")+" left")+'</h1>'
+    +'<p class="sub">Answer each in turn. Anything not asked about needs nothing from you.</p></div>'
+    +'<div class="tally"><div><div class="n tnum">'+done+'/'+total+'</div><div class="k">answered</div></div></div></div>'
+    +'<div class="a-progress"><i style="width:'+Math.round(done/total*100)+'%"></i></div>'
+    +cards
+    +'<div class="a-rest"><b style="color:var(--ink-2)">4 accounts need nothing from you</b> — Northbeam Analytics, Oriel Foods, Alder &amp; Finch, and the rest of Brightyard. They are complete, unambiguous, and go into the files as they are.</div>'
+    +'<details class="a-drawer"><summary><span>What the transform changed on its own — <b>'+REPAIRS.length+' values</b></span><span class="mono" style="color:var(--faint)">audit</span></summary>'
+    +'<div class="a-pair">'+REPAIRS.map(r =>
+        '<div class="mono" style="color:var(--faint);white-space:nowrap">'+r.row.replace("r","row ")+' · '+r.field+'</div>'
+       +'<div class="mono" style="min-width:0;overflow-wrap:anywhere"><span class="strike">'+esc(r.from)+'</span><span class="arrow">→</span><span>'+esc(r.to)+'</span></div>').join("")
+    +'</div></details>'
+    +exportBar()+'</div>';
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   VARIANT B — Candidate ledger
+   Bet: the reviewer must trust the whole output, not just the exceptions.
+   Every candidate is on screen, grouped by the Attio object it becomes.
+   ══════════════════════════════════════════════════════════════════ */
+function repairedVal(accKey, field, val){
+  const r = repairsFor(accKey).find(x => x.field === field);
+  if(!r) return esc(val);
+  if(!showRepairs) return '<span class="was" title="was '+esc(r.from)+'">'+esc(val)+'</span>';
+  return '<span>'+esc(val)+'</span><div class="mono" style="font-size:11px;color:var(--repair);margin-top:2px;overflow-wrap:anywhere">was '+esc(r.from)+'</div>';
+}
+function holdCell(key){
+  return '<label class="b-holdlbl"><input type="checkbox" data-hold="'+key+'" '+(S.holdback[key]?"checked":"")+'> hold</label>';
+}
+function renderB(){
+  const companies = ACCOUNTS.map(a =>
+    '<tr data-flagged="0" data-held="'+(S.holdback[a.key]?1:0)+'">'
+    +'<td><b>'+esc(a.name)+'</b>'+(a.rows.length>1?' <span class="mono" style="color:var(--warn-ink);font-size:11px">2 rows merged</span>':'')+'</td>'
+    +'<td class="mono">'+repairedVal(a.key,"Domain",a.domain)+'</td>'
+    +'<td class="mono">'+repairedVal(a.key,"Employees",a.emp)+'</td>'
+    +'<td>'+esc(a.hq)+'</td>'
+    +'<td class="mono" style="color:var(--faint);font-size:11px">'+a.rows.map(r=>ROWS[r].id).join("<br>")+'</td>'
+    +'<td><span class="chip chip-clear"><i class="dot dot-clear"></i>Clear</span></td>'
+    +'<td>'+holdCell(a.key)+'</td></tr>').join("");
+
+  const people = ACCOUNTS.map(a => a.people.map(p => {
+    const isTern = a.key === "tern";
+    const st = isTern ? ternState() : "clear";
+    const flagged = isTern || a.key==="heliograph" || a.key==="lattice";
+    const lvl = (isTern && st==="held") ? "stop" : "";
+    let chip = '<span class="chip chip-clear"><i class="dot dot-clear"></i>Clear</span>';
+    if(isTern && st==="held") chip = '<span class="chip chip-held"><i class="dot dot-stop"></i>Held</span>';
+    else if(isTern && st==="warn") chip = '<span class="chip chip-decision"><i class="dot dot-warn"></i>Needs decision</span>';
+    else if(a.key==="heliograph") chip = S.ack.N1 ? '<span class="chip chip-done">✓ Read</span>' : '<span class="chip chip-notice"><i class="dot dot-warn"></i>Notice</span>';
+    else if(a.key==="lattice") chip = S.ack.N2 ? '<span class="chip chip-done">✓ Read</span>' : '<span class="chip chip-notice"><i class="dot dot-warn"></i>Notice</span>';
+
+    const emailCell = isTern
+      ? (st==="clear" ? '<span class="mono">'+esc(S.ternEmail)+'</span>'
+                      : '<span class="mono" style="color:var(--stop-ink)">— missing —</span>')
+      : '<span class="mono">'+esc(p.email)+'</span>';
+
+    let expand = "";
+    if(isTern){
+      expand = '<tr data-held="'+(S.holdback[a.key]?1:0)+'"><td class="b-expand" colspan="7"><div class="b-expand-in">'
+        +'<div><span class="chip chip-stop">Stop</span> <b>No work email.</b> Email is how Attio recognises a person; without one every import creates another copy.</div>'
+        +'<div class="quote">“No work email was captured; LinkedIn is verified.”</div>'
+        +'<div class="a-actions">'
+        +'<input class="inp" style="min-width:250px" type="email" placeholder="amina.yusuf@tern.example.com" value="'+esc(S.ternEmail)+'" data-bind="ternEmail">'
+        +'<button class="btn btn-sm '+(S.ternMode==="supplied"?"btn-sel":"")+'" data-act="tern-supplied">Use this email</button>'
+        +'<button class="btn btn-sm '+(S.ternMode==="anyway"?"btn-sel":"")+'" data-act="tern-anyway">Send without one</button>'
+        +(S.ternMode?'<button class="btn btn-quiet btn-sm" data-act="tern-reset">Undo</button>':'')
+        +'</div>'
+        +(n3Active()?'<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap"><span class="chip chip-notice">Notice</span>'
+          +'<span style="font-size:12.5px">Sent without an email, she can never be matched again.</span>'
+          +'<button class="btn btn-sm '+(S.ack.N3?"btn-sel":"")+'" data-act="ack-N3">'+(S.ack.N3?"Read":"I’ve read this")+'</button></div>':'')
+        +'</div></td></tr>';
+    } else if(a.key==="heliograph" || a.key==="lattice"){
+      const k = a.key==="heliograph" ? "N1" : "N2";
+      const quote = a.key==="heliograph"
+        ? "She previously spoke to the team under another email address."
+        : "Their LinkedIn profile and role match a person already researched in the spring campaign.";
+      expand = '<tr data-held="'+(S.holdback[a.key]?1:0)+'"><td class="b-expand" colspan="7"><div class="b-expand-in">'
+        +'<div><span class="chip chip-notice">Notice</span> Nothing to change — this pipeline never reads Attio, so it can relay the note but cannot check it.</div>'
+        +'<div class="quote">“'+quote+'”</div>'
+        +'<div class="a-actions"><button class="btn btn-sm '+(S.ack[k]?"btn-sel":"")+'" data-act="ack-'+k+'">'+(S.ack[k]?"Read":"I’ve read this")+'</button></div>'
+        +'</div></td></tr>';
+    }
+
+    return '<tr data-flagged="'+(flagged?1:0)+'" data-lvl="'+lvl+'" data-held="'+(S.holdback[a.key]?1:0)+'">'
+      +'<td><input class="b-cell-edit" value="'+esc(p.name)+'"></td>'
+      +'<td>'+emailCell+'</td>'
+      +'<td><input class="b-cell-edit" value="'+esc(p.job)+'"></td>'
+      +'<td>'+esc(a.name)+'</td>'
+      +'<td class="mono" style="color:var(--faint);font-size:11px">'+ROWS[p.row].id+'</td>'
+      +'<td>'+chip+'</td><td></td></tr>'+expand;
+  }).join("")).join("");
+
+  const dealRows = [];
+  ACCOUNTS.forEach(a => {
+    const isBy = a.key === "brightyard";
+    const n = (isBy && S.brightyard === "two") ? 2 : 1;
+    for(let i=0;i<n;i++){
+      let chip = '<span class="chip chip-clear"><i class="dot dot-clear"></i>Clear</span>';
+      if(isBy) chip = S.brightyard ? '<span class="chip chip-done">✓ Answered</span>'
+                                   : '<span class="chip chip-decision"><i class="dot dot-warn"></i>Needs decision</span>';
+      dealRows.push('<tr data-flagged="'+((isBy&&!S.brightyard)?1:0)+'" data-held="'+(S.holdback[a.key]?1:0)+'">'
+        +'<td class="mono">'+esc(a.name)+' — New business</td>'
+        +'<td>'+esc(a.name)+'</td>'
+        +'<td class="mono">'+(S.owner.trim()?esc(S.owner):'<span style="color:var(--warn-ink)">batch question</span>')+'</td>'
+        +'<td class="mono">'+(S.dealStage.trim()?esc(S.dealStage):'<span style="color:var(--warn-ink)">batch question</span>')+'</td>'
+        +'<td class="mono" style="color:var(--faint);font-size:11px">'+a.rows.map(r=>ROWS[r].id).join("<br>")+'</td>'
+        +'<td>'+chip+'</td><td></td></tr>');
+      if(isBy && !S.brightyard && i===0){
+        dealRows.push('<tr><td class="b-expand" colspan="7"><div class="b-expand-in">'
+          +'<div><span class="chip chip-decision">Decision</span> <b>Two source rows, one company.</b> One deal, or two?</div>'
+          +'<div class="quote">“Treat this as a second contact at the existing account, not a second opportunity.”</div>'
+          +'<div class="consequence">Deals are always created, never matched. Two rows means two Brightyard deals in Attio, permanently.</div>'
+          +'<div class="a-actions"><button class="btn btn-sm" data-act="by-one">One deal</button>'
+          +'<button class="btn btn-sm" data-act="by-two">Two deals</button></div>'
+          +'</div></td></tr>');
+      }
+    }
+  });
+
+  const totalCands = ACCOUNTS.length + personCount() + dealCount();
+
+  return '<div class="wrap">'
+    +'<div class="masthead"><div>'
+    +'<div class="eyebrow">Batch '+BATCH+' · 8 source rows → '+totalCands+' candidates</div>'
+    +'<h1>Everything this batch will create in Attio</h1>'
+    +'<p class="sub">Flagged rows are highlighted and expand in place. Every other value is editable too.</p></div>'
+    +'<div class="tally">'
+    +'<div><div class="n tnum" style="color:var(--stop)">'+heldCount()+'</div><div class="k">held</div></div>'
+    +'<div><div class="n tnum" style="color:var(--warn)">'+openWarns()+'</div><div class="k">unanswered</div></div>'
+    +'<div><div class="n tnum" style="color:var(--clear)">'+(totalCands-heldCount())+'</div><div class="k">going</div></div>'
+    +'</div></div>'
+
+    +'<div class="b-batchbar">'
+    +'<div class="b-field"><label for="b-owner">Deal owner — Attio user’s email</label>'
+    +'<input class="inp" id="b-owner" type="email" placeholder="maya@yourcompany.com" value="'+esc(S.owner)+'" data-bind="owner"></div>'
+    +'<div class="b-field"><label for="b-stage">Deal stage</label>'
+    +'<input class="inp" id="b-stage" placeholder="e.g. Lead" value="'+esc(S.dealStage)+'" data-bind="dealStage"></div>'
+    +'<p style="font-size:12px;color:var(--accent-ink);max-width:340px;margin-left:auto">Attio requires both on every deal and Notion holds neither. Asked once, applied to all '+dealCount()+'.</p></div>'
+
+    +'<div class="b-toggle"><label style="display:inline-flex;gap:6px;align-items:center;cursor:pointer">'
+    +'<input type="checkbox" id="b-showrepairs" '+(showRepairs?"checked":"")+'> Show what the transform changed ('+REPAIRS.length+')</label>'
+    +'<span>Otherwise repaired values carry a dotted underline — hover for the original.</span></div>'
+
+    +'<section class="b-sec"><div class="b-sechead"><h2>Companies</h2><span>'+ACCOUNTS.length+' candidates from 8 rows — Attio matches on domain</span></div>'
+    +'<div class="b-scroll"><table class="b-tbl"><thead><tr><th>Name</th><th>Domain</th><th>Employees</th><th>HQ</th><th>From</th><th>State</th><th></th></tr></thead>'
+    +'<tbody>'+companies+'</tbody></table></div></section>'
+
+    +'<section class="b-sec"><div class="b-sechead"><h2>People</h2><span>Attio matches on email address</span></div>'
+    +'<div class="b-scroll"><table class="b-tbl"><thead><tr><th>Name</th><th>Email</th><th>Job title</th><th>Company</th><th>From</th><th>State</th><th></th></tr></thead>'
+    +'<tbody>'+people+'</tbody></table></div></section>'
+
+    +'<section class="b-sec"><div class="b-sechead"><h2>Deals</h2><span style="color:var(--warn-ink)">Attio never matches deals — every row here is a permanent create</span></div>'
+    +'<div class="b-scroll"><table class="b-tbl"><thead><tr><th>Deal name</th><th>Company</th><th>Owner</th><th>Stage</th><th>From</th><th>State</th><th></th></tr></thead>'
+    +'<tbody>'+dealRows.join("")+'</tbody></table></div></section>'
+
+    +exportBar()+'</div>';
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   VARIANT C — Account dossiers
+   Bet: the reviewer thinks in accounts, not objects or rows.
+   Brightyard's collapse is shown spatially rather than explained.
+   ══════════════════════════════════════════════════════════════════ */
+function accState(a){
+  if(S.holdback[a.key]) return "held";
+  if(a.key==="tern") return ternState()==="held" ? "held" : ((ternState()==="warn" && !S.ack.N3) ? "warn" : "clear");
+  if(a.key==="brightyard") return S.brightyard ? "clear" : "warn";
+  if(a.key==="heliograph") return S.ack.N1 ? "clear" : "warn";
+  if(a.key==="lattice") return S.ack.N2 ? "clear" : "warn";
+  return "clear";
+}
+function cCard(a){
+  const st = accState(a);
+  const reps = repairsFor(a.key);
+  let flagBlock = "";
+
+  if(a.key==="tern"){
+    flagBlock = '<div class="c-flag" data-lvl="stop">'
+      +'<div><span class="chip chip-stop">Stop · Person</span></div>'
+      +'<b>Amina Yusuf has no work email.</b>'
+      +'<p style="color:var(--ink-2)">Email is how Attio recognises a person. Without one, every future import creates another Amina.</p>'
+      +'<div class="a-actions">'
+      +'<input class="inp" style="min-width:220px" type="email" placeholder="amina.yusuf@tern.example.com" value="'+esc(S.ternEmail)+'" data-bind="ternEmail">'
+      +'<button class="btn btn-sm '+(S.ternMode==="supplied"?"btn-sel":"")+'" data-act="tern-supplied">Use this</button>'
+      +'<button class="btn btn-sm '+(S.ternMode==="anyway"?"btn-sel":"")+'" data-act="tern-anyway">Send without</button>'
+      +(S.ternMode?'<button class="btn btn-quiet btn-sm" data-act="tern-reset">Undo</button>':'')
+      +'</div></div>'
+      +(n3Active()?'<div class="c-flag" data-lvl="notice">'
+        +'<div><span class="chip chip-notice">Notice · Person</span></div>'
+        +'<p>Sent without an email, Amina can never be matched on a later import.</p>'
+        +'<div class="a-actions"><button class="btn btn-sm '+(S.ack.N3?"btn-sel":"")+'" data-act="ack-N3">'+(S.ack.N3?"Read":"I’ve read this")+'</button></div></div>':'');
+  }
+  if(a.key==="brightyard"){
+    flagBlock = '<div class="c-flag" data-lvl="decision">'
+      +'<div><span class="chip chip-decision">'+(S.brightyard?"✓ Answered":"Decision · Deal")+'</span></div>'
+      +'<b>Two people here, from two source rows. One deal, or two?</b>'
+      +'<p style="color:var(--ink-2)">The company merged itself — both rows normalise to the same domain and Attio joins on it. Only the deal is your call, and deals have no undo.</p>'
+      +'<div class="a-actions"><button class="btn btn-sm '+(S.brightyard==="one"?"btn-sel":"")+'" data-act="by-one">One deal</button>'
+      +'<button class="btn btn-sm '+(S.brightyard==="two"?"btn-sel":"")+'" data-act="by-two">Two deals</button></div></div>';
+  }
+  if(a.key==="heliograph" || a.key==="lattice"){
+    const k = a.key==="heliograph" ? "N1" : "N2";
+    flagBlock = '<div class="c-flag" data-lvl="notice">'
+      +'<div><span class="chip '+(S.ack[k]?"chip-done":"chip-notice")+'">'+(S.ack[k]?"✓ Read":"Notice · Person")+'</span></div>'
+      +'<b>'+(a.key==="heliograph"?"May already exist under another address.":"Replied from a newer alias.")+'</b>'
+      +'<p style="color:var(--ink-2)">Nothing to change. This pipeline never reads Attio, so it relays the note without being able to check it.</p>'
+      +'<div class="a-actions"><button class="btn btn-sm '+(S.ack[k]?"btn-sel":"")+'" data-act="ack-'+k+'">'+(S.ack[k]?"Read":"I’ve read this")+'</button></div></div>';
+  }
+
+  const dealLine = (a.key==="brightyard" && S.brightyard==="two")
+    ? esc(a.name)+' — New business <span style="color:var(--warn-ink)">×2</span>'
+    : esc(a.name)+' — New business';
+
+  const peopleLines = a.people.map(p => {
+    const held = (a.key==="tern" && ternState()==="held");
+    const shown = a.key==="tern" ? (S.ternEmail || "") : p.email;
+    return '<div style="display:flex;gap:7px;align-items:baseline">'
+      +'<i class="dot '+(held?"dot-stop":"dot-clear")+'" style="margin-top:6px"></i>'
+      +'<span><b>'+esc(p.name)+'</b> <span style="color:var(--muted)">· '+esc(p.job)+'</span><br>'
+      +'<span class="mono" style="color:'+(held?"var(--stop-ink)":"var(--muted)")+'">'+(held?"held back — no email":esc(shown))+'</span></span></div>';
+  }).join("");
+
+  return '<article class="c-card" data-state="'+st+'" data-holdback="'+(S.holdback[a.key]?1:0)+'">'
+    +'<div class="c-head"><div><h2>'+esc(a.name)+'</h2><div class="c-meta">'
+    +'<span class="mono">'+esc(a.domain)+'</span><span>·</span><span>'+esc(a.emp)+' staff</span><span>·</span><span>'+esc(a.hq)+'</span>'
+    +'<span>·</span><span class="mono" style="color:var(--faint)">from '+a.rows.length+' source row'+(a.rows.length>1?"s":"")+'</span>'
+    +'</div></div><div>'
+    +(st==="held" ? '<span class="chip chip-held"><i class="dot dot-stop"></i>Held</span>'
+      : st==="warn" ? '<span class="chip chip-decision"><i class="dot dot-warn"></i>Needs decision</span>'
+      : '<span class="chip chip-clear"><i class="dot dot-clear"></i>Clear</span>')
+    +'</div></div>'
+
+    +'<div class="c-cols"><div class="c-left">'
+    +'<div class="eyebrow">Will create in Attio</div>'
+    +'<div class="c-obj"><div class="c-obj-k">Company</div><div class="c-obj-v">'
+    +'<div style="display:flex;gap:7px;align-items:baseline"><i class="dot dot-clear" style="margin-top:6px"></i>'
+    +'<span><b>'+esc(a.name)+'</b><br><span class="mono" style="color:var(--muted)">'+esc(a.domain)+'</span></span></div></div></div>'
+    +'<div class="c-obj"><div class="c-obj-k">'+(a.people.length>1?"People":"Person")+'</div><div class="c-obj-v">'+peopleLines+'</div></div>'
+    +'<div class="c-obj"><div class="c-obj-k">Deal</div><div class="c-obj-v">'
+    +'<div style="display:flex;gap:7px;align-items:baseline"><i class="dot '+((a.key==="brightyard"&&!S.brightyard)?"dot-warn":"dot-clear")+'" style="margin-top:6px"></i>'
+    +'<span class="mono">'+dealLine+'</span></div></div></div>'
+    +flagBlock
+    +'</div><div class="c-right"><div class="eyebrow">Research notes</div>'
+    +a.rows.map(r => '<div class="quote" style="font-size:12.5px">'+esc(ROWS[r].notes)
+      +'<div class="mono" style="font-style:normal;color:var(--faint);font-size:11px;margin-top:5px">'+ROWS[r].id+' · '+esc(ROWS[r].contact)+'</div></div>').join("")
+    +'</div></div>'
+
+    +'<div class="c-foot"><details><summary>'
+    +(reps.length ? reps.length+' value'+(reps.length>1?"s":"")+' reformatted ⌄' : 'Nothing reformatted')+'</summary>'
+    +(reps.length ? '<div style="padding-top:9px;display:flex;flex-direction:column;gap:3px">'
+      +reps.map(r => '<div class="mono" style="font-size:11.5px;overflow-wrap:anywhere">'+r.field+': <span class="strike">'+esc(r.from)+'</span><span class="arrow">→</span>'+esc(r.to)+'</div>').join("")
+      +'</div>' : '')
+    +'</details>'
+    +'<label class="b-holdlbl"><input type="checkbox" data-hold="'+a.key+'" '+(S.holdback[a.key]?"checked":"")+'> Hold this whole account back</label>'
+    +'</div></article>';
+}
+function renderC(){
+  const flaggedKeys = ["tern","brightyard","heliograph","lattice"];
+  const flagged = flaggedKeys.map(k => ACC[k]);
+  const clear = ACCOUNTS.filter(a => !flaggedKeys.includes(a.key));
+
+  return '<div class="wrap">'
+    +'<div class="masthead"><div>'
+    +'<div class="eyebrow">Batch '+BATCH+' · 7 accounts from 8 source rows</div>'
+    +'<h1>Four accounts need you</h1>'
+    +'<p class="sub">Each card is one real account — its company, its people, and the deal it will open.</p></div>'
+    +'<div class="tally"><div><div class="n tnum" style="color:var(--warn)">'+(openWarns()+openBatch())+'</div><div class="k">open</div></div>'
+    +'<div><div class="n tnum">'+dealCount()+'</div><div class="k">deals</div></div></div></div>'
+
+    +'<article class="c-card" style="margin-bottom:16px" data-state="'+(openBatch()?"warn":"clear")+'">'
+    +'<div class="c-head" style="border-bottom:0;padding-bottom:8px"><div><h2>Two answers apply to every deal</h2>'
+    +'<div class="c-meta">Attio requires both. Notion holds neither.</div></div><div>'
+    +(openBatch()?'<span class="chip chip-batch">Batch question</span>':'<span class="chip chip-done">✓ Answered</span>')
+    +'</div></div>'
+    +'<div style="padding:4px 18px 16px;display:flex;gap:14px;flex-wrap:wrap">'
+    +'<div class="b-field"><label for="c-owner" style="color:var(--muted)">Deal owner — an Attio user’s email</label>'
+    +'<input class="inp" id="c-owner" type="email" placeholder="maya@yourcompany.com" value="'+esc(S.owner)+'" data-bind="owner"></div>'
+    +'<div class="b-field"><label for="c-stage" style="color:var(--muted)">Deal stage</label>'
+    +'<input class="inp" id="c-stage" placeholder="e.g. Lead" value="'+esc(S.dealStage)+'" data-bind="dealStage"></div>'
+    +'</div></article>'
+
+    +'<div class="c-grid">'+flagged.map(cCard).join("")+'</div>'
+
+    +'<div class="c-clearlist" style="margin-top:18px"><h3>'+clear.length+' accounts need nothing</h3>'
+    +clear.map(a => '<div class="c-clearrow"><i class="dot dot-clear"></i>'
+      +'<b style="min-width:150px">'+esc(a.name)+'</b>'
+      +'<span class="mono" style="color:var(--muted)">'+esc(a.domain)+'</span>'
+      +'<span style="color:var(--faint);margin-left:auto;font-size:11.5px">1 company · 1 person · 1 deal'
+      +(repairsFor(a.key).length?' · '+repairsFor(a.key).length+' reformatted':'')+'</span>'
+      +'<label class="b-holdlbl"><input type="checkbox" data-hold="'+a.key+'" '+(S.holdback[a.key]?"checked":"")+'> hold</label></div>').join("")
+    +'</div>'
+
+    +exportBar()+'</div>';
+}
+
+/* ── export bar + write-back confirmation (the second interrupt, per #7) ── */
+function exportBar(){
+  if(S.stage === "confirm") return confirmBlock();
+  if(S.stage === "done") return doneBlock();
+  const blockers = [];
+  if(openBatch()) blockers.push(openBatch()+" batch question"+(openBatch()>1?"s":""));
+  if(openWarns()) blockers.push(openWarns()+" unanswered warning"+(openWarns()>1?"s":""));
+  return '<div class="exportbar"><div>'
+    +'<div style="font-weight:600;font-size:14px">'+(canExport()?"Ready to export":"Not ready yet")+'</div>'
+    +'<div class="gate">'+(canExport()
+      ? '<b>'+shipped().length+'</b> companies · <b>'+personCount()+'</b> people · <b>'+dealCount()+'</b> deals'
+        +(heldCount()?' — <b>'+heldCount()+'</b> held back, returning next week':'')
+      : 'Waiting on '+blockers.join(" and ")+'. Held candidates never block the batch.')+'</div>'
+    +'<div class="files"><span class="file">people.csv</span><span class="file">deals.csv</span></div></div>'
+    +'<button class="btn btn-primary" data-act="export" '+(canExport()?"":"disabled")+'>Download both files</button></div>';
+}
+function confirmBlock(){
+  /* A source row is fully handed off only if every candidate it fed went.
+     Tern's row feeds a Company and a Deal that go, plus a Person that may be
+     held — so the row is neither Imported nor Ready for CRM. The prototype
+     shows that split rather than picking a side: it is an open question. */
+  const split = (ternState()==="held" && !S.holdback.tern);
+  const going = shipped().filter(a => !(split && a.key==="tern"));
+  const heldNames = Object.keys(S.holdback).filter(k=>S.holdback[k]).map(k => ACC[k].name);
+  return '<div class="confirm" style="margin-top:24px">'
+    +'<div><span class="chip chip-batch">Step 2 of 2 · after you import</span></div>'
+    +'<h2>Did this batch land in Attio?</h2>'
+    +'<p style="color:var(--ink-2);max-width:62ch">Import <span class="mono">people.csv</span>, then <span class="mono">deals.csv</span>, in Attio. Come back whenever that’s done — minutes or days — and tell us it worked. Only then does Notion get updated.</p>'
+    +'<div class="flip">'
+    +'<div class="h">Rows in this batch</div><div></div><div class="h">CRM status becomes</div>'
+    +'<div>'+going.map(a=>esc(a.name)).join(", ")+'</div><div class="arrow">→</div>'
+    +'<div><span class="mono" style="color:var(--clear)">Imported</span></div>'
+    +(heldNames.length
+      ? '<div style="color:var(--muted)">'+heldNames.map(esc).join(", ")+'</div><div class="arrow">→</div>'
+        +'<div><span class="mono" style="color:var(--muted)">Ready for CRM</span> — returns next week</div>'
+      : '')
+    +(split
+      ? '<div style="color:var(--warn-ink)">Tern Mobility <span style="color:var(--muted)">— company and deal went, Amina held</span></div>'
+        +'<div class="arrow">?</div>'
+        +'<div><span class="mono" style="color:var(--warn-ink)">undecided</span> — one Notion row, two answers</div>'
+      : '')
+    +'</div>'
+    +(split
+      ? '<div class="consequence" style="background:var(--warn-soft);color:var(--warn-ink)"><b>The prototype cannot answer this one.</b> '
+        +'Tern Mobility’s row fed a Company and a Deal that went to Attio, and a Person that did not. Marking the row <span class="mono">Imported</span> loses Amina for good; leaving it <span class="mono">Ready for CRM</span> re-sends a deal next week, and deals always create. Flags moved to candidates (ADR-0001) but <span class="mono">CRM status</span> is still per row.</div>'
+      : '')
+    +'<div class="consequence">This asserts something about the outside world that we cannot check. Nothing here reads Attio.</div>'
+    +'<div class="a-actions">'
+    +'<button class="btn btn-primary" data-act="confirm">Yes — it landed, update Notion</button>'
+    +'<button class="btn btn-quiet" data-act="back">Not yet, take me back</button></div></div>';
+}
+function doneBlock(){
+  return '<div class="done-banner" style="margin-top:24px">'
+    +'<div><span class="chip chip-done">✓ Batch closed</span></div>'
+    +'<h2 style="font-size:16px">'+shipped().length+' accounts marked <span class="mono">Imported</span> in Notion.</h2>'
+    +'<p style="color:var(--ink-2)">'+(heldCount()
+      ? heldCount()+' held candidate'+(heldCount()>1?"s":"")+' kept <span class="mono">Ready for CRM</span> and will appear in next week’s batch.'
+      : 'Nothing was held back.')+'</p>'
+    +'<div class="a-actions"><button class="btn btn-quiet" data-act="reset">Run it again</button></div></div>';
+}
+
+/* ── render + events ────────────────────────────────────────────── */
+function render(){
+  const note = '<div class="protonote"><strong>Prototype — issue #10.</strong> '
+    +'Three answers to “what does a reviewer see when a candidate is flagged?”, over the real '+BATCH+' batch. '
+    +'Flip variants at the bottom of the screen. Nothing is saved; nothing is sent anywhere.</div>';
+  document.getElementById("app").innerHTML = note
+    + (variant==="A" ? renderA() : variant==="B" ? renderB() : renderC());
+  document.getElementById("pb-key").textContent = "VARIANT " + variant;
+  document.getElementById("pb-name").textContent = VARIANT_NAMES[variant];
+  if(!document.getElementById("statepanel").hidden) paintState();
+}
+function paintState(){
+  document.getElementById("statepanel").textContent = JSON.stringify({
+    variant: variant, stage: S.stage,
+    dealOwner: S.owner || null, dealStage: S.dealStage || null,
+    ternMobility: { amina: ternState(), email: S.ternEmail || null, mode: S.ternMode },
+    brightyardDeals: S.brightyard,
+    acknowledged: S.ack,
+    heldBack: Object.keys(S.holdback).filter(k => S.holdback[k]),
+    gate: { openWarns: openWarns(), openBatchQuestions: openBatch(), canExport: canExport() },
+    willCreate: { companies: shipped().length, people: personCount(), deals: dealCount() }
+  }, null, 2);
+}
+function setVariant(v){
+  variant = v;
+  const u = new URL(location.href);
+  u.searchParams.set("variant", v);
+  try { history.replaceState({}, "", u); } catch(_){}
+  render();
+}
+
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-act]");
+  if(b){
+    const a = b.dataset.act;
+    if(a==="tern-supplied"){ if(S.ternEmail.trim()){ S.ternMode="supplied"; S.ack.N3=false; } }
+    else if(a==="tern-anyway"){ S.ternMode="anyway"; }
+    else if(a==="tern-reset"){ S.ternMode=null; S.ack.N3=false; }
+    else if(a==="by-one"){ S.brightyard="one"; }
+    else if(a==="by-two"){ S.brightyard="two"; }
+    else if(a==="ack-N1"){ S.ack.N1=!S.ack.N1; }
+    else if(a==="ack-N2"){ S.ack.N2=!S.ack.N2; }
+    else if(a==="ack-N3"){ S.ack.N3=!S.ack.N3; }
+    else if(a==="export"){ S.stage="confirm"; }
+    else if(a==="confirm"){ S.stage="done"; }
+    else if(a==="back"){ S.stage="review"; }
+    else if(a==="reset"){ S = FRESH(); }
+    render();
+    return;
+  }
+  const id = e.target.id;
+  if(id==="pb-prev") setVariant(PREV[variant]);
+  else if(id==="pb-next") setVariant(NEXT[variant]);
+  else if(id==="pb-state"){ const p=document.getElementById("statepanel"); p.hidden=!p.hidden; if(!p.hidden) paintState(); }
+  else if(id==="pb-reset"){ S = FRESH(); showRepairs=false; render(); }
+});
+
+document.addEventListener("input", e => {
+  const k = e.target.dataset.bind;
+  if(k){
+    S[k] = e.target.value;
+    if(k==="ternEmail" && S.ternMode==="supplied" && !e.target.value.trim()) S.ternMode = null;
+    const id = e.target.id, pos = e.target.selectionStart;
+    render();
+    const again = id ? document.getElementById(id) : document.querySelector('[data-bind="'+k+'"]');
+    if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} }
+    return;
+  }
+  if(e.target.id==="b-showrepairs"){ showRepairs = e.target.checked; render(); return; }
+  if(e.target.dataset.hold){ S.holdback[e.target.dataset.hold] = e.target.checked; render(); }
+});
+
+document.addEventListener("keydown", e => {
+  const t = e.target;
+  if(t && (t.tagName==="INPUT" || t.tagName==="TEXTAREA" || t.isContentEditable)) return;
+  if(e.key==="ArrowLeft") setVariant(PREV[variant]);
+  if(e.key==="ArrowRight") setVariant(NEXT[variant]);
+});
+
+render();
+</script>
