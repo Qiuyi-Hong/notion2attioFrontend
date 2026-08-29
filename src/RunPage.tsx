@@ -6,7 +6,8 @@
  * a run needs from a person is different in each of them, so the page is not
  * one layout with a changing badge: a moving run gets a clock and a checklist,
  * a Stopped one gets its cause and **Continue**, and the two pauses get the
- * ledger — the surface backend #10 owns, stubbed here rather than faked.
+ * ledger — the second with the files and the confirmation inline beneath it,
+ * because the reviewer finishes on the surface they reviewed on.
  *
  * Progress comes from the snapshot's pending node and nowhere else. There is
  * no progress field, no second source of truth, and nothing here counts model
@@ -21,6 +22,8 @@ import {
   type ApiError,
   type RunSnapshot,
 } from './api.ts'
+import Confirm from './Confirm.tsx'
+import { unwrittenRows } from './confirm.ts'
 import Ledger from './Ledger.tsx'
 import { navigate } from './router.ts'
 import { elapsed, reading, relativeTime, stepIndexOf, STEPS } from './runs.ts'
@@ -131,7 +134,9 @@ export default function RunPage({ runId }: { runId: string }) {
    * ledger was chosen at. So the page takes the width its body needs rather
    * than one width for both.
    */
-  const ledger = ['awaiting_review', 'awaiting_confirmation', 'done'].includes(run.status)
+  const ledger = ['awaiting_review', 'awaiting_confirmation', 'done', 'abandoned'].includes(
+    run.status,
+  )
 
   return (
     <div className={ledger ? 'page' : 'page narrow'}>
@@ -252,9 +257,10 @@ function Body({
         {/* The same ledger, read-only: it is the record of what was decided,
             and replacing it with a summary of itself would put the reviewer's
             own work out of reach at exactly the moment they are attesting to
-            it. The files and the confirmation are #61's. */}
+            it. The confirmation is inline underneath it rather than on a
+            second screen, for the same reason. */}
         <Ledger run={run} onSnapshot={onSnapshot} readOnly />
-        <Stub>the files and the confirmation land here — backend #61 owns them</Stub>
+        <Confirm run={run} onSnapshot={onSnapshot} />
       </>
     )
   }
@@ -268,13 +274,48 @@ function Body({
     )
   }
 
+  /**
+   * Terminal, and **not** `done`. A `done` run wrote `Imported` to every row
+   * it handed off; this one handed the same deals to Attio and could not mark
+   * Notion, so its batch stays reserved — releasing it would let the next run
+   * emit those deals a second time. Reading this as a finished run is the one
+   * misreading that costs something, which is why it says what is unfinished.
+   *
+   * There are two ways in and they leave different evidence: a write-back that
+   * half-finished names the rows it missed, and one that could never begin —
+   * ADR-0008's dead end, abandoned from a wrong-workspace block — has no
+   * failure list at all. The sentence points at rows only when there are rows.
+   */
   if (run.status === 'abandoned') {
+    const unwritten = unwrittenRows(run.writeBack)
     return (
-      <Stub>
-        The write-back was given up on. Some handed-off rows still read{' '}
-        <code>Ready for CRM</code> in Notion, and this batch stays reserved until a person marks
-        them and deletes this run.
-      </Stub>
+      <>
+        <div className="banner neutral">
+          <div className="grow">
+            <h2>The write-back was abandoned</h2>
+            <p>
+              This run is over, but it is not done. Its bundle is in Attio; Notion was never
+              marked. The batch stays reserved so nobody hands these deals off a second time —{' '}
+              {unwritten.length > 0 ? (
+                <>
+                  a person sets the rows below to <code>Imported</code> in Notion by hand
+                </>
+              ) : (
+                <>
+                  the write-back never ran, so every source row behind the ledger below still
+                  reads <code>Ready for CRM</code> and a person sets them to <code>Imported</code>{' '}
+                  in Notion by hand
+                </>
+              )}
+              , and then deletes this run to release it.
+            </p>
+            {unwritten.length > 0 && <p className="mono rows">{unwritten.join(' · ')}</p>}
+          </div>
+        </div>
+        {/* The ledger stays: it is the record of what went to Attio, and it is
+            what a person marking Notion by hand is reading from. */}
+        <Ledger run={run} onSnapshot={onSnapshot} readOnly />
+      </>
     )
   }
 
@@ -310,8 +351,3 @@ function Checklist({ at, stopped = false }: { at: number; stopped?: boolean }) {
     </ul>
   )
 }
-
-/** A surface another ticket owns, said plainly rather than mocked up. */
-const Stub = ({ children }: { children: React.ReactNode }) => (
-  <div className="stub">{children}</div>
-)

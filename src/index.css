@@ -102,6 +102,10 @@ button { cursor: pointer }
 }
 .banner.stop { background: var(--stop-soft); border: 1px solid rgba(173, 35, 56, .28) }
 .banner.warn { background: var(--warn-soft); border: 1px solid rgba(150, 89, 12, .28) }
+/* Over, and nothing is waiting on anyone. An abandoned run is not an error and
+   not a task, so it wears neither colour — but it is not `done` either, which
+   is what its words have to carry. */
+.banner.neutral { background: var(--surface-2); border: 1px solid var(--line-strong) }
 .banner p { font-size: 12.5px; color: var(--ink-2) }
 .banner .ids { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2) }
 
@@ -170,13 +174,6 @@ button { cursor: pointer }
   font-variant-numeric: tabular-nums; text-align: center; margin-top: 26px;
 }
 .centred { text-align: center }
-
-/* A surface another ticket owns, said plainly rather than mocked up. */
-.stub {
-  margin-top: 18px; padding: 26px 22px; text-align: center;
-  border: 1px dashed var(--line-strong); border-radius: var(--radius);
-  color: var(--muted); font-size: 12.5px;
-}
 
 /* ── The candidate ledger ──────────────────────────────────────────────────
    Carried over from `prototypes/review-screen.prototype.html`, Variant B —
@@ -325,3 +322,52 @@ table.ltbl { border-collapse: collapse; width: 100%; min-width: 1000px; font-siz
   box-shadow: 0 -4px 16px -10px rgba(21, 24, 30, .4);
 }
 .exportbar .gate { margin-top: 4px; max-width: 70ch }
+
+/* ── The confirmation, inline under the ledger ─────────────────────────────
+   The second pause is on the surface the reviewer already reviewed on, so it
+   reads as the bottom of that page rather than as a screen of its own. */
+
+.confirm { margin-top: 26px; border-top: 1px solid var(--line-strong); padding-top: 20px }
+.confirm .lede { margin-bottom: 14px }
+.confirm p { max-width: 78ch }
+
+.bundle {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+
+/* An ordered list, because the order is the point: Attio resolves references
+   as it imports, so a file taken out of turn is an import that fails. */
+.members { margin-top: 12px }
+.members ol { margin: 7px 0 8px; padding-left: 22px; display: flex; flex-direction: column; gap: 2px }
+.members li { padding: 1px 0 }
+.members .line { display: flex; align-items: baseline; gap: 14px; max-width: 52ch }
+.members .line .foot { white-space: nowrap }
+
+.writeback {
+  margin-top: 16px; background: var(--warn-soft);
+  border: 1px solid rgba(150, 89, 12, .28); border-radius: var(--radius); padding: 13px 15px;
+}
+.writeback > p { font-size: 12.5px; color: var(--ink-2); margin-top: 6px }
+.writeback .cause { margin-top: 11px; font-size: 12.5px; color: var(--ink-2) }
+/* The rows are what the reviewer takes to Notion, so they wrap rather than
+   scrolling off the edge of a panel. */
+.rows { color: var(--faint); font-size: 11px; margin-top: 3px; word-break: break-word }
+
+.attest { margin-top: 20px }
+/* The two assertions sit side by side and are the same size: neither is the
+   safe default, and styling one as the escape would answer for the reviewer. */
+.attest .pair { display: flex; gap: 32px; flex-wrap: wrap; margin-top: 10px }
+.attest .choice { flex: 1 1 34ch; display: flex; flex-direction: column; align-items: flex-start; gap: 6px }
+.attest .choice .foot { max-width: 44ch }
+.attest .arm { display: flex; gap: 8px; flex-wrap: wrap }
+.attest .gate { max-width: 74ch; color: var(--stop-ink) }
+
+/* Below the repair and never beside it: reconnecting is the fix, abandoning is
+   the admission that there is nothing left to reconnect to. */
+.abandon {
+  margin-top: 22px; padding-top: 16px; border-top: 1px dashed var(--line-strong);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+}
+.abandon .foot { max-width: 74ch }

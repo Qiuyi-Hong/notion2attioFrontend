@@ -240,15 +240,67 @@ export type Repair = {
  * LangGraph's `snap.next` — it is the whole of the progress model, derived on
  * every read and persisted nowhere.
  *
- * `files`, `writeBack` and `blocked` are transcribed by the ticket that
- * renders them; hand-writing a field before something reads it would be a type
- * claiming a surface exists.
+ * `files`, `writeBack` and `blocked` are the confirmation's three inputs, and
+ * they arrive together: the bundle to download, what a write-back left behind,
+ * and what stops the button being clicked.
  */
 export type RunSnapshot = Run & {
   next: string[]
   candidates: Candidates
   batchFlags: BatchFlag[]
   repairs: Repair[]
+  /** `null` until the emit node has run. */
+  files: HandoffFile[] | null
+  /** `null` until a write-back has been attempted. */
+  writeBack: WriteBack | null
+  /** `null` unless something stops the run being confirmed. */
+  blocked: Blocked | null
+}
+
+/**
+ * One file of the handoff bundle, named and measured but not carried. The
+ * bytes come from `GET /api/runs/:runId/files/:fileId`, so a snapshot the
+ * browser polls does not carry a ZIP.
+ */
+export type HandoffFile = { fileId: string; filename: string; bytes: number }
+
+/**
+ * Why one row went unwritten. A machine code from a closed list, like a flag's
+ * `refused` — no prose travels on the wire, and `confirm.ts` holds the fixed
+ * sentence each one renders as.
+ */
+export type WriteCause =
+  | 'not_connected'
+  | 'wrong_workspace'
+  | 'unauthorised'
+  | 'rate_limited'
+  | 'notion_unavailable'
+  | 'notion_refused'
+
+/**
+ * What a write-back left behind. A non-empty `failed` is the whole of the
+ * retry panel's input: a run with failures is paused at the confirmation
+ * interrupt, which *is* `awaiting_confirmation`, so the surface derives the
+ * difference from this field rather than from any extra state.
+ */
+export type WriteBack = {
+  written: string[]
+  failed: { sourceId: string; cause: WriteCause }[]
+}
+
+/**
+ * What stops this run being confirmed that is not a stage or a missing
+ * Connection. Today there is one reason: the live Connection names a different
+ * workspace from the one this run read its batch from.
+ *
+ * The two names are **for display**, and either can be absent. The comparison
+ * happens on `workspace_id`, server-side, and no id reaches the browser — the
+ * server decides and this app renders.
+ */
+export type Blocked = {
+  reason: 'wrong_workspace'
+  readWorkspace: string | null
+  liveWorkspace: string | null
 }
 
 export const getRun = (runId: string) => request<RunSnapshot>(`/api/runs/${runId}`)
@@ -284,6 +336,50 @@ export const postReview = (runId: string, decision: Decision) =>
     method: 'POST',
     body: JSON.stringify(decision),
   })
+
+/**
+ * The attestation that answers the second pause, and the snapshot it produced
+ * — so a partial failure reaches the reviewer in the response to the click
+ * that caused it rather than on the next poll.
+ *
+ * `{ confirmed: true }` states that the Attio import happened, and is the
+ * payload on the first pass and on every retry alike: one route serves both,
+ * because after a partial failure the run is genuinely back at this pause, so
+ * **Retry is this route with this payload**. `{ abandoned: true }` states that
+ * the import happened and Notion will never be marked; it is `400
+ * invalid_payload` while a write-back can still be attempted.
+ *
+ * A `409 wrong_workspace` is refused here **before either payload is
+ * considered**, except the abandonment, which is the exit from that block.
+ */
+export const confirmRun = (
+  runId: string,
+  attestation: { confirmed: true } | { abandoned: true },
+) =>
+  request<RunSnapshot>(`/api/runs/${runId}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify(attestation),
+  })
+
+/**
+ * The opposite assertion — *these files never reached Attio*. It deletes the
+ * run and releases the batch, so the next run creates each deal once.
+ *
+ * The answer is `unknown` because the contract specifies no body here, unlike
+ * `DELETE /api/connection`. Naming a field nothing reads would be a type
+ * claiming a surface exists; what matters is that the request succeeded.
+ */
+export const cancelRun = (runId: string) =>
+  request<unknown>(`/api/runs/${runId}`, { method: 'DELETE' })
+
+/**
+ * A file's own address. A repeatable `GET`, answering `Content-Disposition:
+ * attachment` with the stored checkpoint bytes — downloading twice returns
+ * identical bytes and moves the run nowhere, which is why this is a plain link
+ * rather than a fetch with a blob behind it.
+ */
+export const fileUrl = (runId: string, fileId: string) =>
+  `/api/runs/${runId}/files/${fileId}`
 
 /** A browser navigation, not a fetch — it ends in a redirect back to `/runs`. */
 export const connectUrl = '/auth/notion/start'
