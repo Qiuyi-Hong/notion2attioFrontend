@@ -53,6 +53,9 @@ button { cursor: pointer }
 }
 
 .page { max-width: 1040px; margin: 0 auto; padding: 26px 22px 40px }
+/* One run is a column, not a table: the checklist and the clock read badly
+   stretched to the width the index needs. The prototype's measure. */
+.page.narrow { max-width: 660px }
 .grow { flex: 1 }
 
 .top {
@@ -131,3 +134,46 @@ button { cursor: pointer }
 .head dd { margin: 0 }
 
 .foot { color: var(--muted); font-size: 12px; margin-top: 16px }
+
+/* The step checklist — the whole of a run's progress, derived from the
+   checkpoint's pending node. Carried over from the prototype. */
+.steps {
+  list-style: none; margin: 18px 0 0; padding: 2px 15px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.steps li { display: flex; gap: 11px; padding: 10px 0; border-bottom: 1px solid var(--line) }
+.steps li:last-child { border-bottom: 0 }
+.steps .mark {
+  width: 18px; flex: none; display: flex; justify-content: center;
+  padding-top: 3px; color: var(--faint); font-size: 12px;
+}
+.steps .mark.done { color: var(--clear) }
+.steps .txt { flex: 1; min-width: 0 }
+.steps .name { display: block; font-size: 13.5px }
+.steps li.pending .name { color: var(--faint) }
+.steps li.active .name { font-weight: 600 }
+/* Shown in every state, never behind a disclosure: during the screening step
+   this sentence is the only thing telling the reviewer a still row is honest. */
+.steps .detail { display: block; font-size: 12px; color: var(--muted); margin-top: 1px }
+
+.spinner {
+  width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--accent-soft); border-top-color: var(--accent);
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg) } }
+
+/* The one thing that moves while the screener runs. */
+.clock {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 34px; font-weight: 600; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; text-align: center; margin-top: 26px;
+}
+.centred { text-align: center }
+
+/* A surface another ticket owns, said plainly rather than mocked up. */
+.stub {
+  margin-top: 18px; padding: 26px 22px; text-align: center;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius);
+  color: var(--muted); font-size: 12.5px;
+}

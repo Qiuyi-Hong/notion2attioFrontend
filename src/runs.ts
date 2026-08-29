@@ -73,3 +73,71 @@ export function relativeTime(createdAt: string, now: number = Date.now()): strin
   if (hours < 24) return `${hours}h ago`
   return `${Math.round(hours / 24)}d ago`
 }
+
+/**
+ * The four steps a run moves through, against the graph node that is pending
+ * while each one is in flight. This is the entire progress model: the snapshot
+ * carries the checkpoint's pending node, so a step is a lookup and nothing
+ * about progress is written down.
+ *
+ * `screen` and `check` are named here before the graph has them — they arrive
+ * with backend #9 and #53 — so the checklist is the four steps
+ * `run-surfaces.md` specified from the first day rather than a list that grows
+ * under the Reviewer. Until then they are pending and then complete, which is
+ * what a run that does not screen actually does.
+ */
+export type Step = { node: string; name: string; detail: string }
+
+export const STEPS: Step[] = [
+  {
+    node: 'read',
+    name: 'Reading the batch from Notion',
+    detail: 'one data-source query, filtered to CRM status = Ready for CRM',
+  },
+  {
+    node: 'transform',
+    name: 'Building candidates',
+    detail: 'deterministic — the rows split into Company, Person and Deal',
+  },
+  {
+    node: 'screen',
+    name: 'Screening research notes',
+    /**
+     * The sentence this surface exists to show. The checkpoint moves only at
+     * node boundaries and this one node makes a model call per row, so the
+     * indicator sits still for most of the wait. Saying so is the whole fix —
+     * a still indicator *with* its explanation reads as honesty, and the same
+     * indicator without one reads as a hang.
+     */
+    detail: 'one model call per source row — nothing to report until they are all back',
+  },
+  { node: 'check', name: 'Running checks', detail: 'flags and candidate states' },
+]
+
+/**
+ * Which step a run is on, read from the checkpoint's pending node.
+ *
+ * `STEPS.length` — past the end — for a run whose pending node is not one of
+ * them: `review` and the pauses are not steps, and neither is the empty `next`
+ * of a graph that ran to the end. Both mean the same thing on screen, which is
+ * that the work is behind it.
+ */
+export const stepIndexOf = (next: string[]): number => {
+  const at = STEPS.findIndex((step) => step.node === next[0])
+  return at >= 0 ? at : STEPS.length
+}
+
+/**
+ * How long a run has been going, as `m:ss` — `h:mm:ss` once it has been going
+ * long enough for that to be a lie. Derived from `createdAt`, which is the
+ * only time the wire carries; there is no per-step clock, because there is no
+ * per-step timestamp and inventing one in the browser would drift.
+ */
+export function elapsed(createdAt: string, now: number = Date.now()): string {
+  const total = Math.max(0, Math.floor((now - Date.parse(createdAt)) / 1000))
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor(total / 60) % 60
+  const seconds = total % 60
+  return hours ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`
+}
