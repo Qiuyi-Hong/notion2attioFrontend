@@ -277,9 +277,9 @@ function Checklist({ at, stopped = false }: { at: number; stopped?: boolean }) {
       {STEPS.map((step, index) => {
         const state = index < at ? 'done' : index === at ? 'active' : 'pending'
         return (
-          <li key={step.node} className={state}>
+          <li key={step.node} className={state} aria-current={state === 'active' && 'step'}>
             <span className={`mark ${state}`} aria-hidden>
-              {state === 'done' ? '✓' : state === 'active' ? (stopped ? '⏸' : <Spinner />) : '○'}
+              {state === 'done' ? '✓' : state === 'active' ? (stopped ? '⏸' : <span className="spinner" />) : '○'}
             </span>
             <span className="txt">
               <span className="name">{step.name}</span>
@@ -293,8 +293,6 @@ function Checklist({ at, stopped = false }: { at: number; stopped?: boolean }) {
     </ul>
   )
 }
-
-const Spinner = () => <span className="spinner" />
 
 /** A surface another ticket owns, said plainly rather than mocked up. */
 const Stub = ({ children }: { children: React.ReactNode }) => (
