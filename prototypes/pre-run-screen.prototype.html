@@ -1,0 +1,962 @@
+<meta charset="utf-8">
+<title>Before and During a Run</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* ─── PROTOTYPE — throwaway. Answers issue #35: what does the reviewer see
+   *before* a run starts and *while* it is running? Three structurally
+   opposed variants over a simulated poll loop, switchable with
+   ?variant=A|B|C. Not production code. ────────────────────────────── */
+
+:root{
+  --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eef1f5; --sunken:#e8ecf1;
+  --ink:#15181e; --ink-2:#3d444f; --muted:#69717f; --faint:#98a0ad;
+  --line:#dfe4ea; --line-strong:#c6cdd7;
+  --accent:#2f57c4; --accent-soft:#e6ecfb; --accent-ink:#22409a;
+  --stop:#ad2338; --stop-soft:#fbe8ea; --stop-ink:#8d1c2e;
+  --warn:#96590c; --warn-soft:#fbf0dd; --warn-ink:#7a4808;
+  --clear:#15705a; --clear-soft:#e2f1ec;
+  --repair:#5b5680; --repair-soft:#edecf4;
+  --shadow:0 1px 2px rgba(21,24,30,.06), 0 6px 20px -8px rgba(21,24,30,.16);
+  --radius:7px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12141a; --surface:#1a1d25; --surface-2:#22262f; --sunken:#0e1015;
+    --ink:#eef1f6; --ink-2:#c3cad5; --muted:#8c95a3; --faint:#6b7482;
+    --line:#2b3039; --line-strong:#3a414d;
+    --accent:#7d9cf5; --accent-soft:#1e2740; --accent-ink:#a8bdfa;
+    --stop:#f08a9a; --stop-soft:#33191f; --stop-ink:#f4a3b0;
+    --warn:#e0ab5f; --warn-soft:#2e2416; --warn-ink:#eabf80;
+    --clear:#5cbfa0; --clear-soft:#132a24;
+    --repair:#a9a3cf; --repair-soft:#232235;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12141a; --surface:#1a1d25; --surface-2:#22262f; --sunken:#0e1015;
+  --ink:#eef1f6; --ink-2:#c3cad5; --muted:#8c95a3; --faint:#6b7482;
+  --line:#2b3039; --line-strong:#3a414d;
+  --accent:#7d9cf5; --accent-soft:#1e2740; --accent-ink:#a8bdfa;
+  --stop:#f08a9a; --stop-soft:#33191f; --stop-ink:#f4a3b0;
+  --warn:#e0ab5f; --warn-soft:#2e2416; --warn-ink:#eabf80;
+  --clear:#5cbfa0; --clear-soft:#132a24;
+  --repair:#a9a3cf; --repair-soft:#232235;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  padding-bottom:132px;
+}
+h1,h2,h3,h4{margin:0; text-wrap:balance; font-weight:600; letter-spacing:-.012em}
+p{margin:0}
+button{font:inherit; cursor:pointer}
+input,select{font:inherit}
+a{color:var(--accent); text-underline-offset:2px}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important} }
+
+.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em}
+.tnum{font-variant-numeric:tabular-nums}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:10.5px;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--muted); font-weight:500;
+}
+
+/* ── fake browser address bar — shared chrome, answers the URL question ── */
+.urlbar{
+  position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:10px;
+  padding:9px 14px; background:var(--sunken); border-bottom:1px solid var(--line);
+}
+.urlbar .dots{display:flex; gap:5px}
+.urlbar .dots i{width:9px; height:9px; border-radius:50%; background:var(--line-strong)}
+.urlbar .field{
+  flex:1; background:var(--surface); border:1px solid var(--line); border-radius:999px;
+  padding:4px 13px; font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--ink-2);
+  display:flex; align-items:center; gap:7px; min-width:0;
+}
+.urlbar .field .host{color:var(--faint)}
+.urlbar .field .path{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.urlbar .note{font-size:11px; color:var(--muted); white-space:nowrap}
+@media (max-width:760px){ .urlbar .note{display:none} }
+
+/* ── prototype chrome ───────────────────────────────────────────── */
+.protobar{
+  position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:80;
+  display:flex; flex-direction:column; align-items:stretch; gap:0;
+  background:var(--ink); color:var(--bg); border-radius:16px;
+  box-shadow:0 8px 30px -6px rgba(0,0,0,.45); overflow:hidden;
+  max-width:calc(100vw - 24px);
+}
+.protobar .row1{display:flex; align-items:stretch}
+.protobar button{
+  background:transparent; border:0; color:inherit; padding:0 14px; font-size:15px;
+  display:flex; align-items:center; opacity:.75;
+}
+.protobar button:hover{opacity:1; background:rgba(255,255,255,.08)}
+.protobar .label{
+  padding:9px 12px; font-size:12.5px; font-weight:500; white-space:nowrap;
+  border-left:1px solid rgba(255,255,255,.16); border-right:1px solid rgba(255,255,255,.16);
+  display:flex; align-items:center; gap:8px;
+}
+.protobar .label .k{
+  font-family:"IBM Plex Mono",monospace; font-weight:600;
+  background:rgba(255,255,255,.16); border-radius:4px; padding:1px 6px;
+}
+.protobar .row2{
+  display:flex; align-items:center; gap:6px; flex-wrap:wrap;
+  padding:7px 10px; border-top:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.05);
+}
+.protobar .row2 .grp{display:flex; align-items:center; gap:4px}
+.protobar .row2 .cap{font-size:10px; letter-spacing:.08em; text-transform:uppercase; opacity:.55; margin-right:2px}
+.chip{
+  background:rgba(255,255,255,.1); border:0; color:inherit; border-radius:999px;
+  padding:3px 10px; font-size:11.5px; opacity:.7; cursor:pointer;
+}
+.chip:hover{opacity:1}
+.chip.on{background:var(--bg); color:var(--ink); opacity:1; font-weight:600}
+
+.statepanel{
+  position:fixed; right:16px; bottom:132px; z-index:79; width:min(430px, calc(100vw - 32px));
+  max-height:56vh; overflow:auto; background:var(--surface); border:1px solid var(--line-strong);
+  border-radius:10px; box-shadow:var(--shadow); padding:14px 16px;
+}
+.statepanel h4{font-size:12px; margin-bottom:8px}
+.statepanel pre{
+  margin:0 0 10px; font-family:"IBM Plex Mono",monospace; font-size:11.5px; line-height:1.55;
+  background:var(--sunken); border-radius:6px; padding:10px; overflow:auto; color:var(--ink-2);
+}
+.statepanel .why{font-size:12px; color:var(--muted); border-top:1px solid var(--line); padding-top:9px}
+.statepanel .why b{color:var(--ink-2)}
+
+/* ── shared page frame ──────────────────────────────────────────── */
+.page{padding:26px 22px 40px}
+.wrap{margin:0 auto}
+.wrap.narrow{max-width:660px}
+.wrap.wide{max-width:1040px}
+
+.card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow)}
+.pill{
+  display:inline-flex; align-items:center; gap:6px; border-radius:999px;
+  padding:2px 9px; font-size:11.5px; font-weight:500; white-space:nowrap;
+}
+.pill.ok{background:var(--clear-soft); color:var(--clear)}
+.pill.warnp{background:var(--warn-soft); color:var(--warn-ink)}
+.pill.stopp{background:var(--stop-soft); color:var(--stop-ink)}
+.pill.neutral{background:var(--surface-2); color:var(--muted)}
+.pill.live{background:var(--accent-soft); color:var(--accent-ink)}
+.dot{width:6px; height:6px; border-radius:50%; background:currentColor; flex:none}
+.dot.pulse{animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+.btn{
+  border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
+  border-radius:6px; padding:7px 14px; font-weight:500; font-size:13px;
+}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.big{padding:11px 22px; font-size:14.5px; border-radius:7px}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn.ghost{border-color:transparent; background:transparent; color:var(--accent); padding:6px 8px}
+.btn.ghost:hover{background:var(--accent-soft)}
+
+.spinner{
+  width:13px; height:13px; border-radius:50%; flex:none;
+  border:2px solid var(--line-strong); border-top-color:var(--accent);
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.banner{border-radius:var(--radius); padding:13px 15px; display:flex; gap:12px; align-items:flex-start}
+.banner.stop{background:var(--stop-soft); border:1px solid rgba(173,35,56,.28)}
+.banner.warn{background:var(--warn-soft); border:1px solid rgba(150,89,12,.28)}
+.banner.info{background:var(--accent-soft); border:1px solid rgba(47,87,196,.24)}
+.banner h4{font-size:13.5px; margin-bottom:3px}
+.banner p{font-size:12.5px; color:var(--ink-2)}
+
+/* ── step checklist (shared vocabulary, three different renderings) ── */
+.steps{list-style:none; margin:0; padding:0}
+.steps li{display:flex; gap:11px; padding:9px 0; border-bottom:1px solid var(--line)}
+.steps li:last-child{border-bottom:0}
+.steps .mark{width:18px; flex:none; display:flex; justify-content:center; padding-top:2px; color:var(--muted)}
+.steps .mark.done{color:var(--clear)}
+.steps .txt{flex:1; min-width:0}
+.steps .name{font-size:13.5px}
+.steps li.pending .name{color:var(--faint)}
+.steps li.active .name{font-weight:600}
+.steps .detail{font-size:12px; color:var(--muted); margin-top:1px}
+.steps .el{font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums; padding-top:3px}
+
+/* ══ VARIANT A — launcher ═══════════════════════════════════════════ */
+.a-conn{display:flex; align-items:center; gap:12px; padding:14px 16px; margin-bottom:20px}
+.a-conn .ws{flex:1; min-width:0}
+.a-conn .ws .nm{font-weight:600}
+.a-conn .ws .sub{font-size:12px; color:var(--muted)}
+.a-batches{display:flex; flex-direction:column; gap:8px; margin:10px 0 22px}
+.a-batch{
+  display:flex; align-items:center; gap:13px; padding:14px 16px; text-align:left; width:100%;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+}
+.a-batch:hover{border-color:var(--line-strong)}
+.a-batch.sel{border-color:var(--accent); background:var(--accent-soft); box-shadow:0 0 0 1px var(--accent)}
+.a-batch .radio{width:16px; height:16px; border-radius:50%; border:1.5px solid var(--line-strong); flex:none}
+.a-batch.sel .radio{border-color:var(--accent); border-width:5px}
+.a-batch .bn{font-weight:600; font-family:"IBM Plex Mono",monospace; font-size:13.5px}
+.a-batch .bc{font-size:12.5px; color:var(--muted)}
+.a-recent{margin-top:34px; padding-top:20px; border-top:1px solid var(--line)}
+.a-recent .rrow{
+  display:flex; align-items:center; gap:11px; padding:9px 2px;
+  border-bottom:1px solid var(--line); font-size:13px;
+}
+.a-recent .rrow:last-child{border-bottom:0}
+.a-recent .rid{font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--muted)}
+.a-take{
+  min-height:calc(100vh - 240px); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center; padding:40px 0;
+}
+.a-take .inner{width:min(460px,100%); text-align:left}
+.a-take .big{font-size:26px; letter-spacing:-.02em; text-align:center; margin-bottom:6px}
+.a-take .sub{text-align:center; color:var(--muted); font-size:13px; margin-bottom:26px}
+.a-take .clock{
+  text-align:center; font-family:"IBM Plex Mono",monospace; font-size:34px;
+  font-variant-numeric:tabular-nums; letter-spacing:-.02em; margin-bottom:4px;
+}
+
+/* ══ VARIANT B — runs index ════════════════════════════════════════ */
+.b-top{
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding-bottom:16px; margin-bottom:0; border-bottom:1px solid var(--line);
+}
+.b-top .grow{flex:1}
+.b-start{display:flex; align-items:center; gap:8px}
+.b-start select{
+  border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
+  border-radius:6px; padding:6px 10px; font-size:13px;
+}
+.b-table{width:100%; border-collapse:collapse; margin-top:2px}
+.b-table th{
+  text-align:left; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--muted); font-weight:500; padding:12px 12px 8px; border-bottom:1px solid var(--line);
+}
+.b-table td{padding:12px; border-bottom:1px solid var(--line); vertical-align:middle; font-size:13px}
+.b-table tr.needy td{background:var(--warn-soft)}
+.b-table tr.needy td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
+.b-table tr.live td{background:var(--accent-soft)}
+.b-table tr.live td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.b-table .rid{font-family:"IBM Plex Mono",monospace; font-size:12.5px}
+.b-table .when{color:var(--muted); font-size:12.5px; white-space:nowrap}
+.b-table td.act{text-align:right; white-space:nowrap}
+.b-expand td{padding:0 12px 16px; background:var(--surface-2)}
+.b-expand .inner{padding:14px 16px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius)}
+.b-consq{font-size:12.5px; color:var(--warn-ink); margin-top:3px}
+
+/* ══ VARIANT C — one surface ═══════════════════════════════════════ */
+.c-head{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:11px 18px;
+  background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:41px; z-index:30;
+}
+.c-head .sep{width:1px; height:20px; background:var(--line)}
+.c-head .grow{flex:1}
+.c-switch{position:relative}
+.c-switch summary{
+  list-style:none; cursor:pointer; display:flex; align-items:center; gap:7px;
+  border:1px solid var(--line-strong); border-radius:6px; padding:5px 11px; font-size:12.5px;
+}
+.c-switch summary::-webkit-details-marker{display:none}
+.c-switch .menu{
+  position:absolute; right:0; top:calc(100% + 6px); width:330px; z-index:35;
+  background:var(--surface); border:1px solid var(--line-strong); border-radius:8px;
+  box-shadow:var(--shadow); padding:5px; max-height:60vh; overflow:auto;
+}
+.c-switch .mi{
+  display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+  background:transparent; border:0; border-radius:5px; padding:8px 9px; color:inherit; font-size:12.5px;
+}
+.c-switch .mi:hover{background:var(--surface-2)}
+.c-body{padding:26px 22px 40px}
+.c-stagebar{
+  display:flex; align-items:center; gap:12px; padding:13px 16px;
+  border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); margin-bottom:18px;
+}
+.c-log{
+  background:var(--sunken); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px 16px; font-family:"IBM Plex Mono",monospace; font-size:12.5px; line-height:1.85;
+  max-height:340px; overflow:auto;
+}
+.c-log .t{color:var(--faint); margin-right:10px}
+.c-log .waiting{color:var(--muted); font-style:italic}
+.c-ledgerstub{
+  border:1px dashed var(--line-strong); border-radius:var(--radius); padding:26px;
+  text-align:center; color:var(--muted); font-size:13px; background:var(--surface-2);
+}
+.c-empty{text-align:center; padding:70px 20px}
+.c-empty h2{font-size:19px; margin-bottom:8px}
+.c-empty p{color:var(--muted); font-size:13px; margin-bottom:20px}
+</style>
+
+<div id="root"></div>
+
+<script>
+/* ─────────────────────────────────────────────────────────────────
+   PROTOTYPE — issue #35. Throwaway. No persistence, no tests, no fetch.
+
+   Question: what does the reviewer see BEFORE a run starts and WHILE it
+   is running? Three structurally opposed variants over one simulated
+   poll loop:
+
+     A — Launcher.    Root is "start this week's batch". Runs list is a
+                      footnote. Running is a full-screen takeover.
+     B — Runs index.  Root is the list of runs. Starting is a control in
+                      the header. What needs you is the front door.
+     C — One surface. The app IS a run. No pre-run page; the batch and
+                      run switchers live in the header and the body
+                      morphs in place through every stage.
+
+   Everything drawn is derived from a simulated `GET /api/runs/:id`
+   snapshot polled every 1.5s, per #16 (202-and-poll, no streaming).
+   Node-level progress comes from LangGraph's `snap.next`, which #3
+   verified names the pending node — no new persistence, per ADR-0003.
+   Per-model-call progress inside the screener node is NOT derivable,
+   and the prototype is deliberately honest about that: the bar sits
+   still for ~24 of the ~29 seconds.
+   ───────────────────────────────────────────────────────────────── */
+
+/* ── the graph's nodes, with honest durations ───────────────────── */
+const NODES = [
+  {id:"read_notion", name:"Reading the batch from Notion", ms:2600,
+   detail:"one data-source query, filtered to CRM status = Ready for CRM", done:"8 source rows"},
+  {id:"transform", name:"Building candidates", ms:900,
+   detail:"deterministic — split rows into Company / Person / Deal", done:"7 companies · 8 people · 7 deals"},
+  {id:"screen", name:"Screening research notes", ms:24000,
+   detail:"one model call per source row — nothing to report between them", done:"2 notices raised"},
+  {id:"check", name:"Running checks", ms:1200,
+   detail:"flags and candidate states", done:"1 Stop · 3 Warns · 2 batch flags"}
+];
+const TOTAL_MS = NODES.reduce((n,s)=>n+s.ms,0);
+
+/* ── batches, as GET /api/batches would return them ─────────────── */
+/* W34 is the real sample. W35 is invented so the picker is a real choice. */
+const BATCHES = [
+  {batch:"2026-W34", ready:8},
+  {batch:"2026-W35", ready:2}
+];
+
+const WORKSPACE = {name:"Carpe Lab", icon:"🗂"};
+
+/* ── recent runs, as GET /api/runs would return them ────────────── */
+const MIN=60000, HOUR=3600000, DAY=86400000;
+const SEED_RUNS = [
+  {runId:"2c19f4a8", batch:"2026-W33", ageMs:3*DAY+2*HOUR, status:"awaiting_confirmation", next:["writeback"]},
+  {runId:"58bc0d31", batch:"2026-W34", ageMs:22*MIN,       status:"stalled",  next:["screen"]},
+  {runId:"9d41e7b2", batch:"2026-W33", ageMs:4*DAY,        status:"done",     next:[]},
+  {runId:"e08a5c6f", batch:"2026-W32", ageMs:11*DAY,       status:"done",     next:[]}
+];
+
+const STATUS_TEXT = {
+  running:"Running", awaiting_review:"Ready for review",
+  awaiting_confirmation:"Waiting on you", done:"Done",
+  failed:"Failed", stalled:"Stopped"
+};
+const STATUS_CLASS = {
+  running:"live", awaiting_review:"live", awaiting_confirmation:"warnp",
+  done:"ok", failed:"stopp", stalled:"stopp"
+};
+
+/* ── connection scenarios, the three that earn a screen per #15 ──── */
+const CONNECTIONS = {
+  connected:  {key:"connected",  connected:true,  label:"Connected"},
+  none:       {key:"none",       connected:false, label:"Not connected",
+               head:"Connect Notion to start a run",
+               body:"The pipeline reads the batch from a Notion workspace and writes CRM status back to it. Nothing can run until one workspace is connected."},
+  cancelled:  {key:"cancelled",  connected:false, label:"Consent cancelled",
+               head:"Notion authorisation was cancelled",
+               body:"You closed the Notion consent screen without approving. Nothing was connected and nothing was stored."},
+  noshare:    {key:"noshare",    connected:true,  label:"Nothing shared",
+               head:"Connected to Carpe Lab, but no databases were shared",
+               body:"Notion only grants access to the pages you tick on the consent screen. None were ticked, so there is no Qualified accounts database to read."},
+  invalid:    {key:"invalid",    connected:false, label:"Connection expired",
+               head:"The Notion connection is no longer valid",
+               body:"Notion answered 401. The grant was most likely withdrawn from the Notion side. Reconnect to carry on."}
+};
+
+/* ── prototype state ────────────────────────────────────────────── */
+let variant = (new URLSearchParams(location.search).get("variant")||"A").toUpperCase();
+if(!["A","B","C"].includes(variant)) variant = "A";
+const VARIANT_NAMES = {A:"Launcher", B:"Runs index", C:"One surface"};
+const PREV = {A:"C",B:"A",C:"B"}, NEXT = {A:"B",B:"C",C:"A"};
+
+let conn = CONNECTIONS.connected;
+let showState = false;
+let speed = 1;
+
+const FRESH = () => ({
+  route:"home",           // home | run
+  focus:null,             // runId currently on screen
+  selectedBatch:"2026-W34",
+  runs:SEED_RUNS.map(r=>{
+    /* a seed run that stopped part-way gets the elapsed time and log it would
+       have had when it stopped, so the checklist is not blank on arrival */
+    const i = NODES.findIndex(n=>n.id===(r.next||[])[0]);
+    const upto = i >= 0 ? i : NODES.length;
+    return {...r, startedAt:Date.now()-r.ageMs,
+      elapsed:NODES.slice(0,upto).reduce((n,x)=>n+x.ms,0) + (i>=0?7000:0),
+      log:NODES.slice(0,upto).map((n,k)=>({at:NODES.slice(0,k+1).reduce((a,x)=>a+x.ms,0), node:n, kind:"done"}))};
+  }),
+  expanded:null,          // B only — which row is expanded
+  polls:0,
+  lastPollAt:null
+});
+let S = FRESH();
+let ticker = null;
+
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const runById = id => S.runs.find(r=>r.runId===id);
+const uuid8 = () => Math.random().toString(16).slice(2,10);
+
+const ago = ms => {
+  if(ms < MIN) return Math.max(1,Math.round(ms/1000)) + "s ago";
+  if(ms < HOUR) return Math.round(ms/MIN) + " min ago";
+  if(ms < DAY) return Math.round(ms/HOUR) + "h ago";
+  return Math.round(ms/DAY) + "d ago";
+};
+const clock = ms => {
+  const s = Math.floor(ms/1000);
+  return String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+};
+
+/* ── the simulated snapshot ──────────────────────────────────────
+   This is the ONLY thing a variant may read about a live run. If a
+   variant wants to draw something that is not in here, that is a
+   contract change to #16 and the prototype should make it obvious. */
+function snapshot(run){
+  if(!run) return null;
+  if(run.status !== "running") return {runId:run.runId, batch:run.batch, status:run.status, next:run.next, createdAt:run.startedAt};
+  const el = run.elapsed || 0;
+  let acc = 0, idx = 0;
+  for(let i=0;i<NODES.length;i++){ if(el >= acc + NODES[i].ms){ acc += NODES[i].ms; idx = i+1; } else { idx = i; break; } }
+  return {
+    runId:run.runId, batch:run.batch, status:"running",
+    next:[NODES[Math.min(idx,NODES.length-1)].id],   /* snap.next — the pending node */
+    createdAt:run.startedAt,
+    _stepIndex:idx, _elapsed:el                       /* derived in the browser, not sent */
+  };
+}
+/* Which node a run is sitting on. For a live run the browser derives it from
+   elapsed time; for every other status it reads `next` — the same field the
+   server got from `snap.next`. A run that is past the graph reads as complete. */
+const stepIndexOf = run => {
+  if(!run) return 0;
+  if(run.status === "running"){ const s = snapshot(run); return s._stepIndex; }
+  const i = NODES.findIndex(n => n.id === (run.next||[])[0]);
+  return i >= 0 ? i : NODES.length;
+};
+
+/* ── start a run: POST /api/runs -> 202 { runId } ────────────────── */
+function startRun(batch){
+  const run = {runId:uuid8(), batch, startedAt:Date.now(), ageMs:0,
+               status:"running", next:[NODES[0].id], elapsed:0, log:[]};
+  S.runs.unshift(run);
+  S.focus = run.runId;
+  S.route = "run";
+  S.expanded = variant === "B" ? run.runId : S.expanded;
+  startTicker();
+  render();
+}
+
+function startTicker(){
+  if(ticker) return;
+  let last = Date.now();
+  ticker = setInterval(()=>{
+    const now = Date.now(), dt = (now-last)*speed; last = now;
+    let live = false;
+    for(const r of S.runs){
+      if(r.status !== "running") continue;
+      live = true;
+      const before = stepIndexOf(r);
+      r.elapsed += dt;
+      const after = stepIndexOf(r);
+      for(let i=before;i<after && i<NODES.length;i++) r.log.push({at:r.elapsed, node:NODES[i], kind:"done"});
+      if(r.elapsed >= TOTAL_MS){ r.status = "awaiting_review"; r.next = ["review"]; }
+    }
+    S.polls++; S.lastPollAt = now;
+    if(!live){ clearInterval(ticker); ticker = null; }
+    render();
+  }, 1500/Math.max(1,speed));
+}
+
+/* ── forced scenarios, so every state is reachable without waiting ── */
+function forceStatus(status){
+  let run = runById(S.focus) || S.runs[0];
+  if(status === "running"){
+    run = {runId:uuid8(), batch:S.selectedBatch, startedAt:Date.now(), status:"running",
+           next:[NODES[0].id], elapsed:0, log:[]};
+    S.runs.unshift(run);
+  } else {
+    run = {runId:uuid8(), batch:S.selectedBatch, startedAt:Date.now()-14*MIN, status,
+           next:status==="done"?[]:status==="awaiting_confirmation"?["writeback"]:["screen"],
+           elapsed:status==="stalled"||status==="failed" ? NODES[0].ms+NODES[1].ms+6000 : TOTAL_MS,
+           log:[]};
+    for(let i=0;i<stepIndexOf(run);i++) run.log.push({at:NODES.slice(0,i+1).reduce((a,x)=>a+x.ms,0), node:NODES[i], kind:"done"});
+    S.runs.unshift(run);
+  }
+  S.focus = run.runId; S.route = "run";
+  if(variant === "B") S.expanded = run.runId;
+  if(status === "running") startTicker();
+  render();
+}
+
+/* ── what the address bar reads — each variant answers differently ── */
+function addressFor(){
+  const r = runById(S.focus);
+  if(variant === "A") return S.route === "run" && r ? "/runs/"+r.runId : "/";
+  if(variant === "B") return S.route === "run" && r ? "/runs/"+r.runId : "/runs";
+  return r ? "/runs/"+r.runId : "/";
+}
+function addressNote(){
+  if(variant === "A") return "root is the launcher · start navigates away";
+  if(variant === "B") return "root redirects to /runs · a run expands in place";
+  return "root lands on the newest run · the URL never goes back";
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   VARIANT A — Launcher
+   Bet: this is a weekly errand. The screen's job is to start it, and
+   to get out of the way while it works. Recent runs are a recovery
+   affordance, not the point of the page.
+   ══════════════════════════════════════════════════════════════════ */
+function renderA(){
+  const focus = runById(S.focus);
+  if(S.route === "run" && focus) return aRunScreen(focus);
+
+  const needy = S.runs.filter(r=>r.status==="awaiting_confirmation");
+  const blocked = !conn.connected || conn.key === "noshare";
+
+  return `<div class="page"><div class="wrap narrow">
+    <div class="eyebrow" style="margin-bottom:6px">Notion → Attio handoff</div>
+    <h1 style="font-size:23px; margin-bottom:22px">Start this week's handoff</h1>
+
+    ${blocked ? `
+      <div class="banner ${conn.key==="noshare"?"warn":"stop"}" style="margin-bottom:22px">
+        <div style="font-size:17px; line-height:1.2">${conn.key==="noshare"?"◎":"⃠"}</div>
+        <div>
+          <h4>${esc(conn.head)}</h4>
+          <p>${esc(conn.body)}</p>
+          <div style="margin-top:11px">
+            <button class="btn primary" onclick="setConn('connected')">
+              ${conn.key==="noshare"?"Choose pages to share":"Connect Notion"}</button>
+          </div>
+        </div>
+      </div>` : `
+      <div class="card a-conn">
+        <div style="font-size:19px">${WORKSPACE.icon}</div>
+        <div class="ws">
+          <div class="nm">${esc(WORKSPACE.name)}</div>
+          <div class="sub">Notion workspace · connected</div>
+        </div>
+        <span class="pill ok"><span class="dot"></span>Connected</span>
+        <button class="btn ghost" onclick="setConn('none')">Disconnect</button>
+      </div>`}
+
+    ${needy.length ? `
+      <div class="banner warn" style="margin-bottom:22px">
+        <div style="font-size:17px; line-height:1.2">◔</div>
+        <div style="flex:1">
+          <h4>${needy.length} earlier run is still waiting for you</h4>
+          <p>Run <span class="mono">${needy[0].runId}</span> (${esc(needy[0].batch)}) produced its files
+             ${ago(Date.now()-needy[0].startedAt)}. Until you confirm the import landed, those rows still
+             read <span class="mono">Ready for CRM</span> in Notion and will come back next week.</p>
+        </div>
+        <button class="btn" onclick="openRun('${needy[0].runId}')">Open</button>
+      </div>` : ""}
+
+    <div class="eyebrow">Batches ready</div>
+    <div class="a-batches">
+      ${BATCHES.map(b=>`
+        <button class="a-batch ${S.selectedBatch===b.batch?"sel":""}" onclick="pick('${b.batch}')" ${blocked?"disabled":""}>
+          <span class="radio"></span>
+          <span style="flex:1">
+            <span class="bn">${esc(b.batch)}</span>
+            <span class="bc"> — ${b.ready} account${b.ready===1?"":"s"} ready</span>
+          </span>
+        </button>`).join("")}
+    </div>
+
+    <button class="btn primary big" onclick="startRun('${S.selectedBatch}')" ${blocked?"disabled":""}
+            style="width:100%">Start run for ${esc(S.selectedBatch)}</button>
+    <p style="text-align:center; color:var(--muted); font-size:12px; margin-top:10px">
+      Takes 20–40 seconds. You can close this tab — the run keeps going.</p>
+
+    <div class="a-recent">
+      <div class="eyebrow" style="margin-bottom:6px">Recent runs</div>
+      ${S.runs.slice(0,4).map(r=>`
+        <div class="rrow">
+          <span class="pill ${STATUS_CLASS[r.status]}">${r.status==="running"?'<span class="dot pulse"></span>':""}${STATUS_TEXT[r.status]}</span>
+          <span style="flex:1">${esc(r.batch)}</span>
+          <span class="rid">${r.runId}</span>
+          <span style="color:var(--muted); font-size:12px">${ago(Date.now()-r.startedAt)}</span>
+          <button class="btn ghost" onclick="openRun('${r.runId}')">Open</button>
+        </div>`).join("")}
+    </div>
+  </div></div>`;
+}
+
+function aRunScreen(run){
+  const snap = snapshot(run);
+  const back = `<button class="btn ghost" onclick="goHome()" style="margin-bottom:18px">← All runs</button>`;
+
+  if(run.status === "running"){
+    const idx = snap._stepIndex;
+    return `<div class="page"><div class="wrap narrow"><div class="a-take"><div class="inner">
+      <div class="clock tnum">${clock(run.elapsed)}</div>
+      <div class="sub">${esc(run.batch)} · run <span class="mono">${run.runId}</span></div>
+      <ul class="steps card" style="padding:4px 16px">
+        ${NODES.map((n,i)=>`
+          <li class="${i<idx?"done":i===idx?"active":"pending"}">
+            <span class="mark ${i<idx?"done":""}">${i<idx?"✓":i===idx?'<span class="spinner"></span>':"○"}</span>
+            <span class="txt">
+              <span class="name">${esc(n.name)}</span>
+              <span class="detail">${i<idx?esc(n.done):esc(n.detail)}</span>
+            </span>
+          </li>`).join("")}
+      </ul>
+      <p style="text-align:center; color:var(--muted); font-size:12px; margin-top:18px">
+        Safe to close. The run has its own link:
+        <span class="mono">/runs/${run.runId}</span></p>
+    </div></div></div></div>`;
+  }
+
+  if(run.status === "stalled" || run.status === "failed"){
+    const idx = stepIndexOf(run);
+    return `<div class="page"><div class="wrap narrow">${back}
+      <div class="banner stop" style="margin-bottom:20px">
+        <div style="font-size:17px; line-height:1.2">⚠</div>
+        <div>
+          <h4>${run.status==="failed" ? "This run hit an error" : "This run stopped part-way"}</h4>
+          <p>${run.status==="failed"
+            ? "A step threw while the run was in flight. Continuing re-runs that step from the last saved point."
+            : "The server restarted while the run was working. Nothing is lost — the run picks up from the last saved step."}
+             It stopped at <b>${esc(NODES[Math.min(idx,NODES.length-1)].name)}</b>,
+             ${ago(Date.now()-run.startedAt)}.</p>
+        </div>
+      </div>
+      <ul class="steps card" style="padding:4px 16px; margin-bottom:20px">
+        ${NODES.map((n,i)=>`
+          <li class="${i<idx?"done":i===idx?"active":"pending"}">
+            <span class="mark ${i<idx?"done":""}">${i<idx?"✓":i===idx?"⏸":"○"}</span>
+            <span class="txt"><span class="name">${esc(n.name)}</span>
+            <span class="detail">${i<idx?esc(n.done):i===idx?"stopped here":esc(n.detail)}</span></span>
+          </li>`).join("")}
+      </ul>
+      <button class="btn primary big" onclick="continueRun('${run.runId}')">Continue this run</button>
+      <button class="btn big" onclick="goHome()" style="margin-left:8px">Leave it</button>
+    </div></div>`;
+  }
+
+  if(run.status === "awaiting_confirmation"){
+    return `<div class="page"><div class="wrap narrow">${back}
+      <div class="banner warn">
+        <div style="font-size:17px; line-height:1.2">◔</div>
+        <div><h4>Waiting for you to confirm the Attio import</h4>
+        <p>The files for ${esc(run.batch)} were made ${ago(Date.now()-run.startedAt)}.
+        ${conn.connected ? "" : "<b>Notion is not connected, so the write-back cannot run yet.</b>"}</p></div>
+      </div>
+      <div class="c-ledgerstub" style="margin-top:18px">the ledger and the confirmation live here — #10 owns this surface</div>
+    </div></div>`;
+  }
+
+  return `<div class="page"><div class="wrap narrow">${back}
+    <div class="c-ledgerstub">${STATUS_TEXT[run.status]} — the ledger lives here (#10)</div>
+  </div></div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   VARIANT B — Runs index
+   Bet: the front door is not "start something", it is "what needs me".
+   ADR-0003 added GET /api/runs to close the lost-link hole; B makes
+   that list the home page rather than a footnote, and starting a run
+   a control in the header.
+   ══════════════════════════════════════════════════════════════════ */
+function renderB(){
+  const blocked = !conn.connected || conn.key === "noshare";
+  const rank = r => r.status==="awaiting_confirmation" ? 0 : r.status==="running"||r.status==="awaiting_review" ? 1 : r.status==="stalled"||r.status==="failed" ? 2 : 3;
+  const rows = [...S.runs].sort((a,b)=> rank(a)-rank(b) || b.startedAt-a.startedAt);
+
+  return `<div class="page"><div class="wrap wide">
+    <div class="b-top">
+      <h1 style="font-size:19px">Runs</h1>
+      ${conn.connected && conn.key!=="noshare"
+        ? `<span class="pill ok"><span class="dot"></span>${WORKSPACE.icon} ${esc(WORKSPACE.name)}</span>
+           <button class="btn ghost" onclick="setConn('none')">Disconnect</button>`
+        : `<span class="pill stopp"><span class="dot"></span>${esc(conn.label)}</span>`}
+      <span class="grow"></span>
+      <div class="b-start">
+        <select onchange="pick(this.value)" ${blocked?"disabled":""}>
+          ${BATCHES.map(b=>`<option value="${b.batch}" ${S.selectedBatch===b.batch?"selected":""}>${b.batch} — ${b.ready} ready</option>`).join("")}
+        </select>
+        <button class="btn primary" onclick="startRun('${S.selectedBatch}')" ${blocked?"disabled":""}>Start run</button>
+      </div>
+    </div>
+
+    ${blocked ? `
+      <div class="banner ${conn.key==="noshare"?"warn":"stop"}" style="margin:16px 0 0">
+        <div style="font-size:17px; line-height:1.2">${conn.key==="noshare"?"◎":"⃠"}</div>
+        <div style="flex:1"><h4>${esc(conn.head)}</h4><p>${esc(conn.body)}</p></div>
+        <button class="btn" onclick="setConn('connected')">${conn.key==="noshare"?"Choose pages":"Connect Notion"}</button>
+      </div>` : ""}
+
+    <table class="b-table">
+      <thead><tr><th style="width:120px">Run</th><th style="width:120px">Batch</th>
+        <th style="width:150px">Started</th><th>State</th><th style="width:190px"></th></tr></thead>
+      <tbody>
+        ${rows.map(r=>bRow(r)).join("")}
+      </tbody>
+    </table>
+
+    <p style="color:var(--muted); font-size:12px; margin-top:16px">
+      Runs are kept until deleted. A run's link works from any browser — nothing here lives in this tab.</p>
+  </div></div>`;
+}
+
+function bRow(r){
+  const live = r.status==="running";
+  const needy = r.status==="awaiting_confirmation";
+  const broken = r.status==="stalled"||r.status==="failed";
+  const idx = stepIndexOf(r);
+  const cls = needy ? "needy" : live ? "live" : "";
+
+  const stateCell = live
+    ? `<span class="pill live"><span class="dot pulse"></span>${esc(NODES[Math.min(idx,NODES.length-1)].name)}</span>
+       <span class="when tnum" style="margin-left:8px">${clock(r.elapsed)}</span>`
+    : `<span class="pill ${STATUS_CLASS[r.status]}">${STATUS_TEXT[r.status]}</span>
+       ${needy ? `<div class="b-consq">files are made · Notion still says <span class="mono">Ready for CRM</span></div>` : ""}
+       ${broken ? `<div class="b-consq" style="color:var(--stop-ink)">stopped at ${esc(NODES[Math.min(idx,NODES.length-1)].name)}</div>` : ""}`;
+
+  const action = needy ? `<button class="btn primary" onclick="openRun('${r.runId}')">Confirm import</button>`
+    : broken ? `<button class="btn primary" onclick="continueRun('${r.runId}')">Continue</button>`
+    : r.status==="awaiting_review" ? `<button class="btn primary" onclick="openRun('${r.runId}')">Review</button>`
+    : live ? `<button class="btn" onclick="toggleExpand('${r.runId}')">${S.expanded===r.runId?"Hide":"Details"}</button>`
+    : `<button class="btn ghost" onclick="openRun('${r.runId}')">Open</button>`;
+
+  const expanded = S.expanded===r.runId && live ? `
+    <tr class="b-expand"><td colspan="5"><div class="inner">
+      <ul class="steps">
+        ${NODES.map((n,i)=>`
+          <li class="${i<idx?"done":i===idx?"active":"pending"}">
+            <span class="mark ${i<idx?"done":""}">${i<idx?"✓":i===idx?'<span class="spinner"></span>':"○"}</span>
+            <span class="txt"><span class="name">${esc(n.name)}</span>
+              <span class="detail">${i<idx?esc(n.done):esc(n.detail)}</span></span>
+          </li>`).join("")}
+      </ul>
+    </div></td></tr>` : "";
+
+  return `<tr class="${cls}">
+    <td class="rid">${r.runId}</td>
+    <td class="mono">${esc(r.batch)}</td>
+    <td class="when">${ago(Date.now()-r.startedAt)}</td>
+    <td>${stateCell}</td>
+    <td class="act">${action}</td>
+  </tr>${expanded}`;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   VARIANT C — One surface
+   Bet: there is no "before". The app is a run, and the batch and run
+   switchers are chrome. Starting swaps the body without leaving the
+   page, so the reviewer never navigates between the wait and the work.
+   ══════════════════════════════════════════════════════════════════ */
+function renderC(){
+  const run = runById(S.focus) || null;
+  const blocked = !conn.connected || conn.key === "noshare";
+  const needy = S.runs.filter(r=>r.status==="awaiting_confirmation");
+
+  const head = `<div class="c-head">
+    ${conn.connected && conn.key!=="noshare"
+      ? `<span class="pill ok"><span class="dot"></span>${WORKSPACE.icon} ${esc(WORKSPACE.name)}</span>`
+      : `<button class="btn" onclick="setConn('connected')" style="border-color:var(--stop); color:var(--stop)">${esc(conn.label)} — reconnect</button>`}
+    <span class="sep"></span>
+    <select onchange="pick(this.value)" ${blocked?"disabled":""}
+      style="border:1px solid var(--line-strong); background:var(--surface); color:var(--ink); border-radius:6px; padding:5px 10px; font-size:12.5px">
+      ${BATCHES.map(b=>`<option value="${b.batch}" ${S.selectedBatch===b.batch?"selected":""}>${b.batch} — ${b.ready} ready</option>`).join("")}
+    </select>
+    <button class="btn primary" onclick="startRun('${S.selectedBatch}')" ${blocked?"disabled":""}>New run</button>
+    <span class="grow"></span>
+    <details class="c-switch">
+      <summary>${run ? `<span class="pill ${STATUS_CLASS[run.status]}" style="padding:0">${STATUS_TEXT[run.status]}</span>
+        <span class="mono">${run.runId}</span>` : "No run open"}
+        ${needy.length ? `<span class="pill warnp">${needy.length} waiting</span>` : ""} ▾</summary>
+      <div class="menu">
+        ${S.runs.map(r=>`
+          <button class="mi" onclick="openRun('${r.runId}')">
+            <span class="pill ${STATUS_CLASS[r.status]}" style="min-width:98px; justify-content:center">${STATUS_TEXT[r.status]}</span>
+            <span class="mono">${r.runId}</span>
+            <span style="color:var(--muted)">${esc(r.batch)}</span>
+            <span style="flex:1"></span>
+            <span style="color:var(--faint); font-size:11.5px">${ago(Date.now()-r.startedAt)}</span>
+          </button>`).join("")}
+      </div>
+    </details>
+  </div>`;
+
+  if(!run) return head + `<div class="c-body"><div class="wrap wide"><div class="c-empty">
+      <h2>Nothing running</h2>
+      <p>Pick a batch above and start a run. It appears here, in place.</p>
+      ${needy.length ? `<button class="btn" onclick="openRun('${needy[0].runId}')">Open the run waiting on you (${esc(needy[0].batch)})</button>` : ""}
+    </div></div></div>`;
+
+  return head + `<div class="c-body"><div class="wrap wide">${cStage(run)}</div></div>`;
+}
+
+function cStage(run){
+  const idx = stepIndexOf(run);
+  const live = run.status === "running";
+
+  const bar = `<div class="c-stagebar">
+    ${live ? '<span class="spinner"></span>' : `<span class="pill ${STATUS_CLASS[run.status]}"><span class="dot"></span>${STATUS_TEXT[run.status]}</span>`}
+    <div style="flex:1">
+      <div style="font-weight:600">${esc(run.batch)}
+        <span class="mono" style="color:var(--muted); font-weight:400">· ${run.runId}</span></div>
+      <div style="font-size:12px; color:var(--muted)">
+        ${live ? esc(NODES[Math.min(idx,NODES.length-1)].name)+" — step "+(idx+1)+" of "+NODES.length
+               : "started "+ago(Date.now()-run.startedAt)}</div>
+    </div>
+    ${live ? `<span class="tnum mono" style="font-size:17px">${clock(run.elapsed)}</span>` : ""}
+    ${(run.status==="stalled"||run.status==="failed")
+      ? `<button class="btn primary" onclick="continueRun('${run.runId}')">Continue</button>` : ""}
+  </div>`;
+
+  if(live || run.status==="stalled" || run.status==="failed"){
+    const lines = run.log.map(l=>`<div><span class="t">${clock(l.at)}</span>${esc(l.node.name)} — ${esc(l.node.done)}</div>`).join("");
+    const tail = live
+      ? `<div><span class="t">${clock(run.elapsed)}</span><span class="waiting">${esc(NODES[Math.min(idx,NODES.length-1)].name)}…
+          ${idx===2 ? "(one call per row, nothing to report until all 8 are back)" : ""}</span></div>`
+      : `<div><span class="t">${clock(run.elapsed||0)}</span><span class="waiting" style="color:var(--stop)">
+          ${run.status==="failed" ? "a step threw here" : "the server restarted here"} — Continue picks up from this point</span></div>`;
+    return bar + `<div class="c-log">${lines || ""}${tail}</div>
+      ${live ? `<p style="color:var(--muted); font-size:12px; margin-top:12px">
+        This page is the run. Its link is in the address bar already — closing the tab does not stop it.</p>` : ""}`;
+  }
+
+  return bar + `<div class="c-ledgerstub">
+    ${run.status==="awaiting_confirmation"
+      ? "the files, and the confirmation that they landed in Attio — same surface, per #10"
+      : "the candidate ledger lives here — #10 owns this surface"}</div>`;
+}
+
+/* ── actions ────────────────────────────────────────────────────── */
+function pick(b){ S.selectedBatch = b; render(); }
+function openRun(id){ S.focus = id; S.route = "run"; if(variant==="B"){ S.expanded = null; } render(); }
+function goHome(){ S.route = "home"; S.focus = variant==="C" ? S.focus : null; render(); }
+function toggleExpand(id){ S.expanded = S.expanded===id ? null : id; render(); }
+function setConn(k){ conn = CONNECTIONS[k]; render(); }
+function continueRun(id){
+  const r = runById(id);
+  r.status = "running"; r.startedAt = Date.now(); r.log = [];
+  for(let i=0;i<stepIndexOf(r);i++) r.log.push({at:NODES.slice(0,i+1).reduce((a,x)=>a+x.ms,0), node:NODES[i], kind:"done"});
+  S.focus = id; S.route = "run";
+  if(variant==="B") S.expanded = id;
+  startTicker(); render();
+}
+function setSpeed(x){ speed = x; if(ticker){ clearInterval(ticker); ticker=null; startTicker(); } render(); }
+function reset(){ if(ticker){clearInterval(ticker); ticker=null;} S = FRESH(); render(); }
+
+/* ── prototype chrome ───────────────────────────────────────────── */
+function chrome(){
+  const run = runById(S.focus);
+  const snap = snapshot(run);
+  const bar = `
+    <div class="protobar">
+      <div class="row1">
+        <button onclick="go('${PREV[variant]}')" title="Previous variant">‹</button>
+        <div class="label"><span class="k">${variant}</span>${VARIANT_NAMES[variant]}</div>
+        <button onclick="go('${NEXT[variant]}')" title="Next variant">›</button>
+        <button onclick="toggleState()" style="font-size:11px; letter-spacing:.06em">STATE</button>
+      </div>
+      <div class="row2">
+        <span class="cap">Connection</span>
+        <div class="grp">
+          ${["connected","none","cancelled","noshare","invalid"].map(k=>
+            `<button class="chip ${conn.key===k?"on":""}" onclick="setConn('${k}')">${CONNECTIONS[k].label}</button>`).join("")}
+        </div>
+      </div>
+      <div class="row2">
+        <span class="cap">Force run state</span>
+        <div class="grp">
+          ${["running","awaiting_review","awaiting_confirmation","stalled","failed","done"].map(k=>
+            `<button class="chip" onclick="forceStatus('${k}')">${k}</button>`).join("")}
+        </div>
+        <span class="cap" style="margin-left:6px">Speed</span>
+        <div class="grp">
+          ${[1,4,10].map(x=>`<button class="chip ${speed===x?"on":""}" onclick="setSpeed(${x})">${x}×</button>`).join("")}
+        </div>
+        <button class="chip" onclick="reset()">reset</button>
+      </div>
+    </div>`;
+
+  const panel = showState ? `
+    <div class="statepanel">
+      <h4 class="eyebrow">GET /api/runs/${run ? run.runId : "…"} — the whole poll response</h4>
+      <pre>${esc(JSON.stringify(snap ? {runId:snap.runId, batch:snap.batch, status:snap.status,
+        next:snap.next, createdAt:new Date(snap.createdAt).toISOString()} : null, null, 2))}</pre>
+      <h4 class="eyebrow">Browser-side, derived from the above</h4>
+      <pre>${esc(JSON.stringify({
+        variant, address:addressFor(),
+        pendingNode:snap ? snap.next[0] : null,
+        stepIndex:snap && snap._stepIndex!=null ? snap._stepIndex+"/"+NODES.length : null,
+        elapsed:run && run.status==="running" ? clock(run.elapsed) : null,
+        polls:S.polls
+      }, null, 2))}</pre>
+      <div class="why">
+        <b>status</b> is #16's closed list of six. <b>next</b> is LangGraph's
+        <span class="mono">snap.next</span>, which #3 verified names the pending node — so the step
+        indicator needs <b>no new persisted field</b>, per ADR-0003.<br><br>
+        <b>What is not in here:</b> how far through the screener's 8 model calls the run is. One node
+        makes all 8, and the checkpoint only moves at node boundaries — so every variant's progress
+        sits still for ~24 of the ~29 seconds. That stall is real, not a prototype shortcut.
+      </div>
+    </div>` : "";
+
+  return bar + panel;
+}
+
+function go(v){
+  variant = v;
+  const u = new URL(location); u.searchParams.set("variant", v); history.replaceState(null,"",u);
+  if(v === "C" && !S.focus) S.focus = S.runs[0] ? S.runs[0].runId : null;
+  render();
+}
+function toggleState(){ showState = !showState; render(); }
+
+function urlbar(){
+  return `<div class="urlbar">
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="field"><span class="host">localhost:5173</span><span class="path">${esc(addressFor())}</span></div>
+    <div class="note">${esc(addressNote())}</div>
+  </div>`;
+}
+
+function render(){
+  const body = variant==="A" ? renderA() : variant==="B" ? renderB() : renderC();
+  const open = document.querySelector(".c-switch[open]") !== null;
+  document.getElementById("root").innerHTML = urlbar() + body + chrome();
+  if(open){ const d = document.querySelector(".c-switch"); if(d) d.open = true; }
+}
+
+document.addEventListener("keydown", e=>{
+  if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  if(e.key === "ArrowLeft") go(PREV[variant]);
+  if(e.key === "ArrowRight") go(NEXT[variant]);
+});
+
+if(variant === "C") S.focus = S.runs[0].runId;
+render();
+</script>
